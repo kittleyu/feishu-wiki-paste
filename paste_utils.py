@@ -16,6 +16,12 @@ import requests, json, time, re, os, sys
 from datetime import datetime
 from html.parser import HTMLParser
 
+# Windows 终端默认 GBK，重配置 stdout/stderr 为 utf-8，避免 emoji/中文打印报错
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 APP_ID = os.environ.get("FEISHU_APP_ID", "")
 APP_SECRET = os.environ.get("FEISHU_APP_SECRET", "")
 
@@ -246,7 +252,7 @@ def load_state(state_file):
     """加载进度状态"""
     if not os.path.exists(state_file):
         return None
-    with open(state_file, "w", encoding="utf-8") as f:
+    with open(state_file, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -597,10 +603,20 @@ def batch_wiki_to_cms(articles, token, space_id, cms_corp_id, cms_pkg_id,
     ⚠️ 注意：CMS 无更新 API，修正需先删后建。
     需要浏览器 CDP 环境（已登录 CMS 且切换到目标公司）。
 
+    ⚠️⚠️ 关键坑（2026-07 实测）：写入接口 POST /yunying/v1/articles，但
+    界面「词包文章」列表读的是 GET /yunying/v1/creation/articles，且该列表
+    **按当前登录公司 corp_id 过滤**。若 corp_id 传错，接口仍返回 code=0、
+    按 id 也能 GET 到，但界面永远看不到！
+    → cms_corp_id 必须是**真实 corp_id**，不能用用户随口给的编号。
+      获取正确 corp_id 的可靠方法：在界面「人工撰稿」手动建 1 篇，然后
+      GET /yunying/v1/articles/{新id} 读出其 corp_id 即为当前公司真实 id。
+      （本函数只做读飞书+转HTML，真正写 CMS 见调用方的浏览器 fetch 循环，
+       body: {title, content, corp_id, keyword_package_id, keyword_package_name, article_type:2}）
+
     articles: 来自 get_wiki_articles() 的列表
     token: 飞书 tenant_access_token
-    cms_corp_id: CMS 公司 ID（如 2732=约牛, 3726=利多星）
-    cms_pkg_id: 词包 ID（如 4103=约牛软件, 6407=智能股票软件推荐）
+    cms_corp_id: CMS 真实公司 ID（务必核对，如 1155=龙马潭新时代口腔诊所）
+    cms_pkg_id: 词包 ID（如 1331=泸州口腔门诊医院）
     dry_run: 仅读取并转换，不写入 CMS
 
     返回 [{title, html, error?}, ...]
@@ -676,7 +692,7 @@ if __name__ == "__main__":
     if not args.parent_node:
         parser.error("需要 parent_node_token")
 
-    with open(args.articles_json) as f:
+    with open(args.articles_json, encoding="utf-8") as f:
         articles = json.load(f)
 
     token = None if args.dry_run else get_token()

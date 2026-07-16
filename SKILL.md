@@ -8,7 +8,7 @@ description: |
   触发词：粘贴到飞书、发布到 Wiki、挂到知识库、填链接到表、批量发布、粘贴到CMS、导入词包
 ---
 
-# 飞书 Wiki 批量粘贴 Skill v2.2.0
+# 飞书 Wiki 批量粘贴 Skill v2.4.0
 
 ## 🎯 功能
 
@@ -456,22 +456,34 @@ resp = requests.put(
 | 🆕 **Wiki→CMS 标题重复** | 正文出现重复标题 | `block_type=1`（页面块）被渲染到正文 | 跳过 `block_type=1`，CMS 标题字段单独存 |
 | 🆕 **CMS 更新 API 404** | PUT/PATCH 不生效 | CMS 无更新接口 | `DELETE` 后 `POST` 重建 |
 | 🆕 **CDP evaluate 批量请求超时** | 逐条 WebSocket 发请求超时 | 多次 evaluate 往返延迟大 | 将所有 fetch 放入单个 evaluate 表达式，在浏览器上下文内循环执行 |
+| 🔴 **接口 code=0 但 CMS 界面看不到** | corp_id 传错 | 列表按当前公司 corp_id 过滤，错公司名下不显示 | 用 `--verify-corp`/`--auto-corp` 反查真实 corp_id；先 `--preflight` 探路确认可见再铺开 |
+| 🔴 **Chrome 起不来/调试端口不通** | 用默认 User Data 开远程调试 | Chrome 禁止默认配置+调试端口同用 | 复制 profile 到临时目录，`--user-data-dir=临时目录 --remote-debugging-port=9222`（已封装 `launch_chrome_debug.py`） |
+| 🔴 **用户给的"公司编号"不是 corp_id** | 把内部编号当 corp_id | 84347≠真实 1155，界面筛不出 | 永远用脚本反查，不信任手写数字 |
 
 ---
 
 ## 🛠️ 可复用脚本
 
-脚本路径：`skills/feishu-wiki-paste/paste_utils.py`
+脚本路径：`skills/feishu-wiki-paste/`
+
+### 核心模块 `paste_utils.py`（飞书侧）
 
 核心函数：
 - `get_token()` — 获取飞书 tenant_access_token
-- `create_wiki_node_and_write(token, parent_node, title, blocks)` — 创建节点+写内容（支持 3 次重试），返回 (node_token, obj_token, error)
-- `fill_spreadsheet(token, urls, start_row, col)` — 填表，按列索引
-- `convert_html_to_blocks(html_content)` — CMS HTML → 飞书块列表（基于 HTMLParser）
-- `preview_blocks(articles, output_file=None)` — 🆕 预览模式，显示块转换结果
-- `batch_paste(articles, token, parent_node, dry_run=False, state_file=None, retry_failed_indices=None)` — 批量主流程
-- `retry_failed(state_file=None)` — 🆕 从状态文件读取失败列表，仅重试失败文章
-- `save_state(state_file, articles, wiki_urls, params, failed, success)` — 🆕 保存断点续传状态
+- `get_wiki_articles(token, space_id, node_token, page_size)` — 列出 Wiki 目录文章
+- `get_doc_blocks(token, obj_token)` — 读飞书文档块
+- `feishu_blocks_to_html(blocks)` — 飞书块 → CMS HTML（h2/h3/h4/p + 粗体）
+- `batch_wiki_to_cms(articles, token, space_id, corp_id, pkg_id, dry_run)` — 方向 B 读+转 HTML（**只做读+转，CMS 写入见下方脚本**）
+- `create_wiki_node_and_write(...)` / `batch_paste(...)` / `preview_blocks(...)` / `retry_failed(...)` — 方向 A（CMS→飞书）
+
+### 方向 B 浏览器自动化脚本（CMS 写入侧，需 Playwright + Chrome 调试端口）
+
+- **`launch_chrome_debug.py`** — 复制 Chrome 配置+启动带调试端口的 Chrome（解决坑 2）。`python launch_chrome_debug.py`
+- **`direction_b_cms_write.py`** — 写 CMS + 校验落库。支持 `--verify-corp`(反查 corp_id)、`--preflight`(写1篇探路)、`--auto-corp`、`--delete`。
+- **`cms_discover_ids.py`** — 通过 API 自动查公司/词包 ID：`python cms_discover_ids.py --company '公司全名' --pkg '词包名'` → 打印 corp_id/pkg_id（底层用 `GET /yunying/v1/corp/active` 列公司 + `GET /yunying/v1/auth/changecorp?corp_id=X` 切换 + `GET /yunying/v1/keyword/package` 取词包）。无需盲猜、无需点界面。
+- **`direction_b_run.py`** — 端到端：飞书读+转 HTML+写 CMS 一条龙。`--dry-convert` 仅转换；`--write --auto-corp` 全跑；`--preflight` 先探路。
+
+> 依赖：`pip install requests playwright`；CMS 写入需先 `python launch_chrome_debug.py` 让 Chrome 带调试端口且已登录 huiyouhua。
 
 ---
 
@@ -540,12 +552,20 @@ resp = requests.put(
 
 先在 CMS 页面切换到目标公司，再查看词包列表获取 `keyword_package_id`。
 
-已知词包 ID（已验证）：
-| 公司 | corp_id | 词包名 | keyword_package_id |
-|------|---------|--------|-------------------|
-| 云南约牛 | 2732 | 约牛软件 | 4103 |
-| 上海利多星 | 3726 | 智能股票软件推荐 | 6407 |
-| 永安期货 | 3258 | — | — |
+已知词包 ID：
+| 公司 | corp_id | 词包名 | keyword_package_id | 状态 |
+|------|---------|--------|-------------------|------|
+| 龙马潭新时代口腔诊所 | **1155** | 泸州口腔门诊医院 | 1331 | ✅ 已实测验证(2026-07) |
+| 成都川蜀血管病医院有限公司 | **3041** | 成都静脉曲张医院 | 5538 | ✅ 已实测验证(2026-07) |
+| 云南约牛 | 2732 | 约牛软件 | 4103 | ⚠️ 旧编号，写前务必 verify-corp |
+| 上海利多星 | 3726 | 智能股票软件推荐 | 6407 | ⚠️ 旧编号，写前务必 verify-corp |
+| 永安期货 | 3258 | — | — | ⚠️ 旧编号，写前务必 verify-corp |
+
+> ⚠️ **corp_id 是最大坑**：用户口头给的"公司编号"几乎都不是真实 `corp_id`
+> （实测用户给 84347，真实是 1155）。真实 corp_id 必须用下面「步骤 B7」的
+> `--verify-corp` / `--auto-corp` 反查，**不要相信任何手写数字**。
+> 更省事：直接用 `cms_discover_ids.py --company '公司全名' --pkg '词包名'`
+> 通过 API 自动查出 corp_id/pkg_id（见「可复用脚本」）。
 
 ### 步骤 B2：读取 Wiki 文章列表
 
@@ -678,6 +698,57 @@ const expression = `(async()=>{
 })()`;
 ```
 
+### 步骤 B7：⚠️ 实战踩坑与一键脚本（2026-07 实测）
+
+本次真实跑通一套流程后，把最致命的坑和可复用脚本固化如下。**这些坑原 SOP 没写，第一次必踩。**
+
+#### 🔴 坑 1：corp_id 传错 → 接口成功但界面永远看不到
+
+- `POST /yunying/v1/articles` 只要字段格式对就返回 `code=0`，按 id 也能 `GET` 到；
+- 但界面「词包文章」列表（`GET /yunying/v1/creation/articles`）**按当前登录公司 `corp_id` 过滤**；
+- 一旦 `corp_id` 错了，文章挂在错误公司名下，界面永远筛不出来 —— 看起来像"没写进去"。
+- **正确 corp_id 不能用用户手写数字**，必须实测反查（见步骤 B6 脚本的 `--verify-corp`）。
+
+#### 🔴 坑 2：Chrome 远程调试端口必须用「非默认配置」
+
+- 直接 `chrome.exe --remote-debugging-port=9222`（默认 User Data）会启动失败；
+- 必须复制一份配置到临时目录，用 `--user-data-dir=临时目录` 启动（登录态会带过去）；
+- 已封装成 `launch_chrome_debug.py`，一行搞定（见下）。
+
+#### ✅ 推荐的一键流程（用本 skill 自带脚本）
+
+```bash
+# 0) 准备带调试端口的 Chrome（复制 profile + 启动，原 Chrome 不动）
+python launch_chrome_debug.py
+#    → 启动后保持窗口打开，确认 huiyouhua 已登录
+
+# 1) 飞书读取 + 转 HTML（skill 原生函数）
+python direction_b_run.py --node-token OfcbwcdeyicTKlkgS6fczBYhn4e \
+    --pkg-id 1331 --dry-convert          # 仅转换，产出 converted.json 预览
+
+# 2) 写 CMS 前，先自动核对 corp_id（读当前公司一篇样本反查，不写任何东西）
+python direction_b_cms_write.py --articles converted.json --pkg-id 1331 --verify-corp
+
+# 3) 写 1 篇探路，确认它出现在词包列表
+python direction_b_cms_write.py --articles converted.json \
+    --corp-id 1155 --pkg-id 1331 --preflight
+
+# 4) 正式铺开，并逐篇校验落库
+python direction_b_cms_write.py --articles converted.json \
+    --corp-id 1155 --pkg-id 1331
+#    → 结果存 cms_write_results.json；异常篇会自动标记 mismatch
+
+# （可选）删掉之前写错的文章
+python direction_b_cms_write.py --delete 235619,235620
+```
+
+> 嫌分步麻烦可用 `direction_b_run.py --write --auto-corp`：读+转+写+校验一条龙，
+> corp_id 自动从列表反查。**但首次务必先 `--preflight` 探路**，确认界面能看到再铺开。
+
+#### 已知正确 corp_id（实测）
+
+- **龙马潭新时代口腔诊所 = 1155**（泸州口腔门诊医院词包 1331 已实测 20 篇成功落库）
+
 ---
 
 ## 🔄 双向链路图
@@ -725,6 +796,8 @@ const expression = `(async()=>{
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v2.4.0 | 2026-07-15 | 🆕 新增 `cms_discover_ids.py`：通过 API 自动反查公司 corp_id + 词包 pkg_id（corp/active 列公司 + auth/changecorp 切换 + keyword/package 取词包），彻底免盲猜；实测成都川蜀血管病医院有限公司=3041 / 成都静脉曲张医院=5538 |
+| v2.3.0 | 2026-07-15 | 🆕 方向 B 实战踩坑固化：新增 `launch_chrome_debug.py`/`direction_b_cms_write.py`/`direction_b_run.py`；补充 corp_id 陷阱(corp_id 错→界面看不见)、Chrome 调试端口必须非默认配置两大坑；新增 `--verify-corp`/`--auto-corp`/`--preflight` 防错机制；实测 corp_id 龙马潭新时代口腔诊所=1155 |
 | v2.2.0 | 2026-07-14 | 🆕 方向 B：Wiki→CMS 完整 SOP（飞书块→HTML 转换、CMS 创建/删除 API）；新增 5 条错误速查（标题丢失、重复、更新 API 404、批量超时）；新增 paste_utils 反向函数 |
 | v2.1.0 | 2026-07-10 | 🆕 预览模式 (--dry-run)、失败重试 + 断点续传 (--state + --retry-failed) |
 | v2.0.0 | 2026-07-10 | 核心修复：HTMLParser 替代正则；CMS 获取步骤；列表/粗体规范化 |
