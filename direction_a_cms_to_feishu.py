@@ -74,11 +74,17 @@ def article_count(page, corp_id):
     return r or 0
 
 
-def fetch_latest(page, corp_id, limit, page_size=None):
-    """拉取该公司最新 limit 篇（含完整 content），按 created_at 降序。"""
+def fetch_latest(page, corp_id, limit, page_size=None, audit_status=None):
+    """拉取该公司最新 limit 篇（含完整 content），按 created_at 降序。
+
+    audit_status: None=不筛选（接口默认返回全部）；1=已审核通过；-1=审核驳回。
+                  注意 CMS 无独立的「待审核(0)」状态，传 0 会被接口忽略视为全部。
+    """
     changecorp(page, corp_id)
     n = page_size or max(limit, 50)
     url = f"/yunying/v1/creation/articles?page=1&page_size={int(n)}"
+    if audit_status is not None:
+        url += f"&audit_status={int(audit_status)}"
     data = safe_eval(page,
         "(async()=>{var r=await fetch(" + json.dumps(url) +
         ",{method:'GET'});var d=await r.json();return d;})()")
@@ -126,13 +132,15 @@ def find_corp_by_name(page, company, log_fn=print):
 
 
 def run_pipeline_a(company, node_token, limit=10, log_fn=print,
-                   space_id=None, dry_run=False, out_file=None, subdir=None):
+                   space_id=None, dry_run=False, out_file=None, subdir=None,
+                   audit_status=None):
     """方向 A 主流程：CMS 最新 limit 篇 → 飞书 Wiki 目录。
 
     company: 公司名（模糊匹配；同名多 corp 时自动选有文章且最多的）
     node_token: 目标飞书 Wiki 目录 node_token
     limit: 取最新几篇
     subdir: 若指定，在该目录下新建/复用名为 subdir 的子目录并贴入（如 '7.22'）
+    audit_status: None=不筛；1=已审核通过；-1=审核驳回（CMS 无独立待审核态）
     返回 {total, ok, bad, urls, corp_id, space_id}
     """
     load_env()  # 确保 FEISHU_APP_ID/SECRET 等凭证注入环境变量（run_client.py 路径必经）
@@ -163,8 +171,10 @@ def run_pipeline_a(company, node_token, limit=10, log_fn=print,
             return None
 
         # 2) 拉最新 limit 篇
-        log_fn(f">>> 拉取 {corp_name}({corp_id}) 最新 {limit} 篇 …")
-        articles = fetch_latest(page, corp_id, limit)
+        st_label = {1: "已审核通过", -1: "审核驳回"}.get(audit_status,
+                       "全部状态" if audit_status is None else f"audit_status={audit_status}")
+        log_fn(f">>> 拉取 {corp_name}({corp_id}) 最新 {limit} 篇（审核状态：{st_label}）…")
+        articles = fetch_latest(page, corp_id, limit, audit_status=audit_status)
         if not articles:
             log_fn("⚠️ 没有可读的文章")
             return None
