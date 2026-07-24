@@ -1,0 +1,18 @@
+{
+  "示例期货公司": {
+    "dir_node": "YOUR_DIR_NODE_E",
+    "sheet_node": "YOUR_SHEET_NODE_A"
+  },
+  "示例期货公司": {
+    "dir_node": "YOUR_DIR_NODE_A",
+    "sheet_node": "YOUR_SHEET_NODE_C"
+  },
+  "示例客户": {
+    "dir_node": "YOUR_PARENT_NODE_A",
+    "sheet_node": "PI5owcGzii2mnSkFvjSc01H2nvg"
+  },
+  "示例肛肠医院": {
+    "dir_node": "YOUR_DIR_NODE_D",
+    "sheet_node": "YOUR_SHEET_NODE_B"
+  }
+}
