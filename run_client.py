@@ -50,6 +50,8 @@ def main():
     ap.add_argument("company", help="client_map.json 里的公司名，如 永安期货")
     ap.add_argument("limit", nargs="?", default=10, type=int, help="最新几篇，默认 10")
     ap.add_argument("--subdir", default=None, help="子目录名，默认当日日期 M.D（如 7.22）")
+    ap.add_argument("--audit-status", type=int, default=None,
+                    help="按审核状态筛选：1=已审核通过；-1=审核驳回；不填=全部（CMS 无独立待审核态）")
     ap.add_argument("--dry-run", action="store_true", help="只预览转换，不写飞书/不填表")
     args = ap.parse_args()
 
@@ -63,7 +65,9 @@ def main():
     sheet_node = entry.get("sheet_node")
 
     subdir = args.subdir or today_subdir()
-    print(f">>> 公司={args.company}  数量={args.limit}  子目录={subdir}  "
+    st_hint = {1: "已审核通过", -1: "审核驳回"}.get(args.audit_status,
+                 "全部状态" if args.audit_status is None else f"audit_status={args.audit_status}")
+    print(f">>> 公司={args.company}  数量={args.limit}  子目录={subdir}  审核状态={st_hint}  "
           f"目录={dir_node}  审核表={sheet_node or '(未配置)'}")
 
     # 1) 粘贴到飞书（建/复用子目录）
@@ -73,6 +77,7 @@ def main():
         subdir=subdir,
         out_file=os.path.join(HERE, "bot_direction_a_results.json"),
         dry_run=args.dry_run,
+        audit_status=args.audit_status,
     )
     if not res or res.get("total", 0) == 0:
         print("❌ 未取到文章（可能该公司无最新文章或登录失败）")
