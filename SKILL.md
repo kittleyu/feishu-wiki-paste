@@ -8,7 +8,7 @@ description: |
   触发词：粘贴到飞书、发布到 Wiki、挂到知识库、填链接到表、批量发布、粘贴到CMS、导入词包
 ---
 
-# 飞书 Wiki 批量粘贴 Skill v2.4.0
+# 飞书 Wiki 批量粘贴 Skill v2.7.5
 
 ## 🎯 功能
 
@@ -18,6 +18,32 @@ description: |
 4. 将文章 Wiki 链接批量填入飞书多维表格
 5. 🆕 **预览模式（`--dry-run`）**：写入前先查看块转换效果
 6. 🆕 **失败重试 + 断点续传**：单篇失败不影响后续，支持 `--retry-failed` 重跑失败文章
+
+---
+
+## 🚀 最简用法（client_map 简写，v2.7.0+，日常 90% 场景）
+
+把每个客户的「顶层目录 + 审核表」配进 `client_map.json` 一次后，**用户只需说公司名 + 篇数**，机器人自动：
+① 找到该客户顶层飞书目录 → ② 在下面**新建/复用「当日日期 M.D」子目录** → ③ 拉 CMS 最新 N 篇贴进去 → ④ 把链接回填审核表（B 列链接、A 列合并写日期）。
+
+**群内一句话（方向 A）：**
+```
+@机器人 永安期货 10篇
+@机器人 中泰期货 20篇
+@机器人 约牛最新十五篇          # 中文数字也认
+@机器人 永安期货 5篇 自建个7.22目录   # 显式子目录，覆盖「当日日期」
+```
+> `client_map.json` 当前已配：永安期货 / 中泰期货 / 约牛 / 西安东大肛肠。加新客户只需告诉我
+> 「公司名 → 目录链接 + 表格链接」，我补一行即可。**审核表是可选的**——配了才会自动填。
+
+**也可在对话里/本地直接驱动**（不依赖 @机器人）：
+```bash
+python run_client.py 永安期货 10            # 默认建当日日期子目录
+python run_client.py 中泰期货 20 --subdir 7.22   # 指定子目录
+python run_client.py 约牛 10 --dry-run       # 只预览转换，不写不填
+```
+
+**其它方向的完整指令格式仍可用**（见下方「群内指令格式」）：方向 B（飞书→CMS 词包）、方向 F（目录链接→填表）、方向 G（AI 生文→粘贴→填表）。`client_map` 仅简化方向 A。
 
 ---
 
@@ -481,9 +507,70 @@ resp = requests.put(
 - **`launch_chrome_debug.py`** — 复制 Chrome 配置+启动带调试端口的 Chrome（解决坑 2）。`python launch_chrome_debug.py`
 - **`direction_b_cms_write.py`** — 写 CMS + 校验落库。支持 `--verify-corp`(反查 corp_id)、`--preflight`(写1篇探路)、`--auto-corp`、`--delete`。
 - **`cms_discover_ids.py`** — 通过 API 自动查公司/词包 ID：`python cms_discover_ids.py --company '公司全名' --pkg '词包名'` → 打印 corp_id/pkg_id（底层用 `GET /yunying/v1/corp/active` 列公司 + `GET /yunying/v1/auth/changecorp?corp_id=X` 切换 + `GET /yunying/v1/keyword/package` 取词包）。无需盲猜、无需点界面。
-- **`direction_b_run.py`** — 端到端：飞书读+转 HTML+写 CMS 一条龙。`--dry-convert` 仅转换；`--write --auto-corp` 全跑；`--preflight` 先探路。
+- **`run_direction_b.py`** — 方向 B 通用一键驱动（复用 feishu_collect + auto_paste.run_pipeline）：`python run_direction_b.py --node <飞书node> --company <公司> --pkg <词包>`。
+- **`prepare_multi.py`** — 🆕 父目录取「指定子目录」文章：解析父目录子节点 → 模糊匹配子目录名（如 `6/29,6/30,7.1,7/2`，自动归一化分隔符）→ 逐层收集文档（跳过 folder 递归）→ `feishu_blocks_to_html` 转换 → 合并去重。`python prepare_multi.py --parent-token <父目录node> --subdirs "6/29,6/30,7.1,7/2" --out gui_articles.json`（仅飞书 API，不需 Chrome）。
+- **`auto_paste.py`** — 🆕 全自动一条龙（方向 B，需账号密码）：启动/复用调试 Chrome（全新临时 profile，**不杀用户正常 Chrome**）→ 用 `运营账号` 登录 huiyouhua（GEO 选项卡）→ API 反查 corp_id/pkg_id → 先写 1 篇探路校验 → 全量写入并逐篇校验。账号密码经环境变量 `HYH_USER`/`HYH_PWD` 传入（**不落盘、不提交**）。**已参数化**：`HYH_USER=xxx HYH_PWD=yyy python auto_paste.py --company '公司全名' --pkg '词包名' --in gui_articles.json`（不再硬编码 NODE_TOKEN/COMPANY/PKG；`--user-corp-id` 可选仅交叉核对，强烈建议留空以 API 反查为准）。
+- **`direction_a_cms_to_feishu.py`** — 🆕 **方向 A 全自动（CMS→飞书）**：登录 huiyouhua → 按公司名解析真实 corp_id（同名多公司时自动选「有文章且最多」的那个）→ `changecorp` → 拉 `creation/articles` 最新 N 篇（含完整 content，按 `created_at` 降序）→ 复用 `batch_paste` 写入目标飞书 Wiki 目录。`python direction_a_cms_to_feishu.py --company '中泰期货股份有限公司' --node <目录node> --limit 10`（支持 `--dry-run` 预览转换、`--space-id` 指定空间）。`find_corp_by_name()` / `run_pipeline_a()` 均可被 bot 直接调用。`direction_a` 结果 json 含 `urls`（飞书文档链接列表）与 `articles`（标题+正文）。
+- **`fill_sheet.py`** — 🆕 **把链接回填到飞书电子表格（sheet）**：把 `direction_a` 结果里的 `urls` 追加写到指定「电子表格」某列（默认第二列=B），从已填单元格下一行开始。`python fill_sheet.py --node <表格wiki节点token> --links direction_a_cms_results.json --col 2`（支持 `--sheet '7月内容'` 指定工作表、`--dry-run` 先确认范围再写入）。⚠️ 注意：**电子表格(sheet, obj_type=sheet)** 与**多维表格(bitable)** 是两套 API——本脚本走 `sheets/v2`（metainfo 取 sheetId → values 读/写）；填多维表格请用 bitable API。飞书应用需开通 `sheets:spreadsheet` 权限并把表格分享给机器人应用。**同时暴露 `run_fill(node, urls, col, sheet_hint, token, dry_run)` 供 bot 方向 F 直接调用。**
+- **`collect_d5nl_links.py`** — 🆕 **收集某飞书目录全部文章子页链接**：`list_nodes` 列目录子节点（只取 docx）→ 生成带 `urls` 字段的 json，供 `fill_sheet.py` 回填；也可单独用来核对目录下文章数。`python collect_d5nl_links.py --save`（写出 `yn_links.json`）/ 不带 `--save` 仅打印。
+- **`feishu_bot.py`** — 🆕 飞书群聊机器人（**四向**：方向 A + 方向 B + 方向 F 填表 + 方向 G 生文）：基于飞书事件「长连接模式」(WebSocket) 本机常驻，群里 @它 发指令即完成粘贴。方向 B 复用 `feishu_collect()`+`run_pipeline()`；方向 A 复用 `run_pipeline_a()`（**支持 `client_map.json` 简写**：只给「公司名+篇数」即自动匹配目录 + 建当日日期子目录 + 填审核表）；方向 F 复用 `list_nodes()`+`fill_sheet.run_fill()`（把源目录文章链接填进表格指定列）。进度/结果回发群里。运行 `python feishu_bot.py`（保持窗口开着即在线），或双击 `start_bot.bat`。前置：飞书开放平台开启事件订阅「长连接模式」+ 添加 `im.message.receive_v1` + 权限 `im:message`/`im:message.group`/`im:message:send_as_bot`；`.env` 需含 `HYH_USER`/`HYH_PWD`。
+- **`run_client.py`** — 🆕 方向 A 通用驱动（基于 `client_map.json`）：`python run_client.py <公司名> [数量] [--subdir 7.22] [--dry-run]`，等价于机器人方向 A 的完整流程（建日期子目录 + 贴文 + 填表），用于「在对话里/本地」直接驱动，无需 @机器人。
 
 > 依赖：`pip install requests playwright`；CMS 写入需先 `python launch_chrome_debug.py` 让 Chrome 带调试端口且已登录 huiyouhua。
+
+## 🤖 飞书群聊机器人（方向 B 自动执行）
+
+让机器人常驻在群里，**直接 @它 发指令就完成粘贴**。基于飞书事件「长连接模式」(WebSocket)，**本机运行、无需公网地址/内网穿透**，飞书 SDK 自带加密鉴权。
+
+### 飞书开放平台前置配置（一次性）
+1. 应用 → **事件订阅** → 开启，订阅方式选 **「长连接模式」**
+2. **添加事件** `im.message.receive_v1`（接收消息）
+3. **权限管理**开通：`im:message`、`im:message.group`、`im:message:send_as_bot`
+4. 机器人已加入目标群，且群已开**知识库权限**（读取 wiki 用）
+
+### 本机运行
+- 依赖：`lark-oapi`（`pip install lark-oapi`）+ 已有的 `requests`/`playwright`
+- 凭证：`.env` 需含 `FEISHU_APP_ID/SECRET` 与 `HYH_USER/HYH_PWD`（huiyouhua 自动登录）
+- 启动（推荐）：双击 `start_bot.bat` → 用 `pythonw` **无黑窗口常驻**，日志写 `bot_console.log`，彻底脱离终端/本会话（关掉终端也不掉线，最适合长期运行）。
+- 启动（调试）：`python -u feishu_bot.py`（终端保持开着即在线，stdout 实时可见）。
+- ⚠️ 只保持**一个**常驻实例即可；不要让多个终端/后台任务同时拉起 bot（重复启动会被单实例保护拒掉，见下行）。
+- 🔁 **开机自启（推荐长期运行方式）**：把 `start_bot.bat` 的「镜像副本」`FeishuWikiPasteBot.bat`（绝对路径版、本机专用、不进 git）放进 Windows「启动」文件夹（`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`），用户**登录 Windows 时自动以 `pythonw` 无窗口拉起**，彻底脱离本会话/WorkBuddy，断网重连后也会自愈。无需管理员权限、不用任务计划程序。
+
+### 群内指令格式（自然语言解析，双向均支持）
+```
+# 方向 B：飞书 → CMS 词包
+@机器人 粘贴 <飞书目录链接> 到 <公司全名> <词包名>
+@机器人 粘贴 <父目录链接> 下面 6/29 6/30 7.1 7/2 到 <公司全名> <词包名>
+
+# 方向 A：CMS → 飞书 Wiki（最新 N 篇）
+@机器人 把 <公司全名>(id可选) 粘贴到 <飞书目录链接> 最新10条
+
+# 方向 A（client_map 简写，已配客户无需给链接，自动建当日日期子目录+填表）
+@机器人 永安期货 10篇
+@机器人 中泰期货 20篇
+@机器人 约牛最新十五篇            # 中文数字也认
+@机器人 永安期货 5篇 自建个7.22目录   # 显式子目录，覆盖「当日日期」
+
+# 方向 F：把飞书目录的文章链接填进电子表格某列（默认第二列）
+@机器人 把 <源目录链接> 的文章链接填到 <表格链接> 第二列
+@机器人 把 <源目录链接> 的文章链接填到 <表格链接> 第二列 工作表 6月内容
+```
+- 方向 B：读飞书 → 反查公司/词包真实 ID → 登录 huiyouhua → 探路 1 篇 → 全量写入并逐篇校验 → 回发。
+- 方向 A：登录 huiyouhua → 按公司名选有文章的 corp → 拉最新 N 篇 → 转飞书块 → 写入指定目录 → 回发链接。
+- 方向 F：列源目录全部 docx 子页 → 取其飞书链接 → 追加填进目标电子表格（sheet）指定列（默认 B，从已填单元格下一行起）。自动去重无害（覆盖写同一格不会重复）。源必须是文件夹/docx 目录，目标必须是 sheet（飞书应用需 `sheets:spreadsheet` 权限+分享表格）。可选「工作表 X」指定具体 worksheet，否则默认选含「7月」或第一个。
+- 方向 G（智能生文→粘贴→填表，全自动）：`@机器人 生文 <公司/产品> <关键词包> <数量> 粘贴到 <飞书目录链接> 填到 <表格链接>`，机器人**直接调 huiyouhua 后端接口**生文（不再模拟点击 UI，根治「切公司后提交瞬间被还原成默认公司、误给错公司批量生文」的事故）。流程：`corp/active` 按名定位 corp（同名多 corp 逐个探测）→ `auth/changecorp` 切换 → `knowledge-base` 取产品知识库 id → `keyword/package` 取词包 id（词包名称字段是 `core_keyword`，非 `name`）→ `POST /creation/tasks`(`product_kb_id`+`keyword_package_id`+`article_count`，**无 corp_id**，公司由 product_kb_id 决定）→ 轮询 `creation/articles` 筛新文章 → 在飞书**顶层目录**下自动建「当天日期 M.D」子目录并粘贴 → 可选填表。每步回群一句。`粘贴到`/`填到` 可省略（只生文就写 `@机器人 生文 长岛民宿 长岛民宿推荐 10`）；**约定：只给最上层公司名目录链接，日期子目录由 bot 自动建**。
+- **更新机器人（零手动）**：群里发 `@机器人 更新` → bot 自动 `git pull` 最新代码并以新进程替换自己（自重启用 `--wait-exit <旧pid>` 等旧实例退出再抢单实例锁，避免误判重复）。配合 `start_bot.bat` / 启动文件夹镜像 在启动前先 `git pull`，保证任何一次启动都跑最新版。
+- 方向 A 的公司名后的 `(id：83966)` 等标注会被自动忽略（按名反查 + 探文章数选真实 corp）。
+- **指令解析对口语较宽容**（不是死板模板）：①数量「条/篇/篇文章」都识别，中文数字（十/二十）也认，且**不写数量时默认 10 篇**（方向 A）；②公司名后的 `(id:83966)` 标注自动去除；③消息里贴的飞书链接自动抓取（位置不严格，按出现顺序取源/目标）；④解析不出会回群 `⚠️ 没看懂指令`+ 格式示例，**不会静默失败**。硬要求只有：群里必须 **@机器人**。**方向 A 触发有两种**：(a) 含「粘贴」关键字 + 飞书目录链接（任意公司）；(b) **client_map 里已配的公司名 + 篇数**（如 `永安期货 10篇`，无需给链接，自动建当日日期子目录并填表，v2.7.0+）。方向 B 要「粘贴」、方向 F 要「填」+「链接/表」。
+- 数量写法兼容「最新10条 / 最新10篇 / 最新10篇文章」（`parse_command` 用 `最新\s*(\d+)` 提取，不再漏掉带「篇」字的说法）。
+- ⚠️ **目标链接必须是文件夹/docx 文档**，不能是电子表格(sheet)/多维表(bitable)。bot 在写之前会先查节点 `obj_type`，若是 `sheet/bitable/mindnote` 会直接回群提示「不能贴文章页，请给文件夹链接」，避免像早期那样误把文章贴到表格节点下导致整批失败。
+- 同一时刻只处理一条任务（其余排队提示「处理中」）；方向 A/B/F 共用 `_paste_lock`。**进程级单实例保护**：`feishu_bot.py` 启动时扫描系统进程，若已存在另一个 `feishu_bot.py` 主实例（排除自身及自身 fork/spawn 的 worker，并排除调试/验证辅助脚本 `_verify_bot`/`_debug_bot`）则拒绝重复启动——**v2.6.5 起由「原子锁文件 `.bot.lock`」改为「进程扫描」**，根治 lark ws 库 fork/spawn worker 模型下锁文件被误删/误判导致保护失效的问题；避免多实例抢同一个 Chrome 调试端口 9222 互相打架（早期「每次只粘几篇 + 后续报错」的元凶之一）。
+- **自愈重连**：`main()` 的 `cli.start()` 包在 `while True` 重连循环里——一旦网络抖动或服务端踢线导致 `cli.start()` 返回或抛异常，会打日志并 `sleep(5)` 后自动重连，进程**永不因瞬时断线而退出**（常驻/开机自启场景必需；否则断网一次 bot 就掉线需手动拉起）。
+
+### 实现要点
+- `feishu_bot.py`：`lark.ws.Client` 长连接收消息 → `parse_command` 解析 → 后台线程调 `feishu_collect()`+`run_pipeline()` → `send_text()` 回发。
+- 复用 `prepare_multi.feishu_collect`（读+转 HTML）与 `auto_paste.run_pipeline`（登录+写+校验），零重复代码。
+- 事件回调须在 3 秒内返回 → 重活在后台线程跑，先 ACK 再回报。
 
 ---
 
@@ -491,16 +578,22 @@ resp = requests.put(
 
 ### 方向 A（CMS→飞书Wiki）：
 
+**已配 client_map 的客户（推荐，最简）**——只需说公司名 + 篇数，机器人自动匹配目录、建当日日期子目录、填表：
+```
+@机器人 永安期货 10篇
+@机器人 中泰期货 20篇
+```
+> 加新客户：告诉我「公司名 → 目录链接 + 表格链接」，我补进 `client_map.json` 即可。
+
+**未配 client_map 的临时任务**——给完整链接：
 ```
 用户每次任务只需提供：
-1. 客户名 + CMS 编号（如：永安期货 85901）
+1. 客户名（公司全名，同名多公司会按文章数自动选）
 2. 目标 Wiki 目录 URL
-3. 表格 URL + 行列范围（如：B21:B40）
+3. （可选）表格 URL + 填表列
 ```
-
 示例：
-> 把永安期货 85901 最新 20 篇文章粘贴到
-> https://xxx.feishu.cn/wiki/ABCD 的 7.10 目录下，
+> 把永安期货最新 20 篇文章粘贴到 https://xxx.feishu.cn/wiki/ABCD 的 7.10 目录下，
 > 链接填到 https://xxx.feishu.cn/wiki/SPREADSHEET 的 B21:B40
 
 ### 方向 B（飞书Wiki→CMS词包）：
@@ -557,15 +650,32 @@ resp = requests.put(
 |------|---------|--------|-------------------|------|
 | 龙马潭新时代口腔诊所 | **1155** | 泸州口腔门诊医院 | 1331 | ✅ 已实测验证(2026-07) |
 | 成都川蜀血管病医院有限公司 | **3041** | 成都静脉曲张医院 | 5538 | ✅ 已实测验证(2026-07) |
+| 云南约牛软件技术有限公司 | **2732** | 天龙博弈 | 4111 | ✅ 已实测验证(2026-07，30篇落库) |
 | 云南约牛 | 2732 | 约牛软件 | 4103 | ⚠️ 旧编号，写前务必 verify-corp |
 | 上海利多星 | 3726 | 智能股票软件推荐 | 6407 | ⚠️ 旧编号，写前务必 verify-corp |
-| 永安期货 | 3258 | — | — | ⚠️ 旧编号，写前务必 verify-corp |
+| 永安期货股份有限公司 | **3258** | 新手期货公司推荐 | 7502 | ✅ 已实测验证(2026-07) |
+| 贵阳脉通血管医院有限公司 | **3049** | 贵阳静脉曲张医院推荐 | 5539 | ✅ 已实测验证(2026-07) |
+| 中泰期货股份有限公司 | **543** | （方向 A：CMS→飞书，按文章数自动选） | — | ✅ 实测 1728 篇，方向 A 批量写入飞书(2026-07) |
+
+### 飞书节点速查（方向 A / 填表用）
+| 用途 | node_token | 类型 | 说明 |
+|------|-----------|------|------|
+| 云南约牛 文章目录 | **D5nLwcbp9itV2ykAhM9cIx9Xnvd**（标题「7.20」） | docx（可贴文章页） | 方向 A 把文章页贴这里 |
+| 云南约牛 审核表 | **PI5owcGzii2mnSkFvjSc01H2nvd**（「约牛内容审核表」） | **sheet（表格）** | ⚠️ 只能填链接，**不能贴文章页**；父节点 QucCwtrytiWzxvkroPEcc35FnVh |
+| 永安期货 文章目录 | **GKETw73PPi9qvUkgI8BcEVBOnih** | docx | 方向 A 文章页 |
+| 永安期货 审核表 | **YQAywVgkUiXIhNkdJvTcVw0xnIc**（「永安期货内容审核表」） | **sheet** | 链接填 B 列（实测 B108:B137） |
+| 中泰期货 文章目录 | **Zi5CwEPMKivP2UkpWFucjDrDnDd** | docx | 方向 A 文章页 |
 
 > ⚠️ **corp_id 是最大坑**：用户口头给的"公司编号"几乎都不是真实 `corp_id`
-> （实测用户给 84347，真实是 1155）。真实 corp_id 必须用下面「步骤 B7」的
+> （实测用户给 84347，真实是 1155；用户给中泰期货"83966"，真实是 543）。真实 corp_id 必须用下面「步骤 B7」的
 > `--verify-corp` / `--auto-corp` 反查，**不要相信任何手写数字**。
 > 更省事：直接用 `cms_discover_ids.py --company '公司全名' --pkg '词包名'`
 > 通过 API 自动查出 corp_id/pkg_id（见「可复用脚本」）。
+>
+> 🔴 **同名多公司（双胞胎坑）**：实测「中泰期货股份有限公司」在 CMS 里竟有 **7 个**
+> 同名 corp（id 2414 / 2260 / 1613 / 1612 / 1611 / 1599 / 543），其中 6 个是空的，
+> **只有 543 有 1728 篇**。方向 A 的 `find_corp_by_name()` 按公司名匹配到所有候选后，
+> 逐个探文章数、自动选「有文章且最多」的那个，彻底规避选错空壳公司。
 
 ### 步骤 B2：读取 Wiki 文章列表
 
@@ -723,7 +833,7 @@ python launch_chrome_debug.py
 #    → 启动后保持窗口打开，确认 huiyouhua 已登录
 
 # 1) 飞书读取 + 转 HTML（skill 原生函数）
-python direction_b_run.py --node-token OfcbwcdeyicTKlkgS6fczBYhn4e \
+python run_direction_b.py --node OfcbwcdeyicTKlkgS6fczBYhn4e \
     --pkg-id 1331 --dry-convert          # 仅转换，产出 converted.json 预览
 
 # 2) 写 CMS 前，先自动核对 corp_id（读当前公司一篇样本反查，不写任何东西）
@@ -742,12 +852,76 @@ python direction_b_cms_write.py --articles converted.json \
 python direction_b_cms_write.py --delete 235619,235620
 ```
 
-> 嫌分步麻烦可用 `direction_b_run.py --write --auto-corp`：读+转+写+校验一条龙，
+> 嫌分步麻烦可用 `run_direction_b.py`：读+转+写+校验一条龙（`--node <飞书node> --company <公司> --pkg <词包>`），
 > corp_id 自动从列表反查。**但首次务必先 `--preflight` 探路**，确认界面能看到再铺开。
 
 #### 已知正确 corp_id（实测）
 
 - **龙马潭新时代口腔诊所 = 1155**（泸州口腔门诊医院词包 1331 已实测 20 篇成功落库）
+- **成都川蜀血管病医院有限公司 = 3041**（成都静脉曲张医院词包 5538 已实测 20 篇成功落库）
+- **永安期货股份有限公司 = 3258**（新手期货公司推荐词包 7502 已实测 19 篇成功落库）
+- **贵阳脉通血管医院有限公司 = 3049**（贵阳静脉曲张医院推荐词包 5539 已实测 59 篇成功落库，含 6/29·6/30·7.1·7/2 四子目录）
+- **云南约牛软件技术有限公司 = 2732**（天龙博弈词包 4111 已实测 30 篇成功落库）
+
+---
+
+## 🔜 方向 A：CMS → 飞书 Wiki（自动批量，已实战验证）
+
+### 概述
+
+将某公司在 huiyouhua CMS 里「最新 N 篇」文章，批量创建到飞书知识库指定目录下。
+**核心流程**：
+1. 浏览器自动化登录 huiyouhua（复用 `auto_paste` 的 `ensure_chrome`/`check_logged_in`/`do_login`）
+2. 按公司名定位真实 corp_id（`find_corp_by_name`：同名多公司时自动选有文章且最多的）
+3. `changecorp` 切到该公司 → 拉 `GET /yunying/v1/creation/articles?page=1&page_size=N`
+4. 按 `created_at` 降序取最新 N 篇（该接口**已含完整 content HTML**，无需再逐篇 GET）
+5. `convert_html_to_blocks` 转飞书块 → `create_wiki_node_and_write` 逐篇写入目标目录
+
+### 关键要点 / 实战教训
+
+| 要点 | 详情 |
+|------|------|
+| **`creation/articles` 已含完整 `content`** | 返回每篇的 `content` 即完整 HTML，直接转块即可，不必再 `GET /articles/{id}` |
+| **排序字段 `created_at`** | ISO8601（如 `2026-07-17T16:58:26.677+08:00`），降序取最新；解析失败退回字符串排序 |
+| **同名多公司陷阱** | 中泰期货在 CMS 有 7 个同名 corp，只有 543 有文章。`find_corp_by_name` 自动探文章数选最多的 |
+| **用户给的"编号"不是 corp_id** | 中泰期货用户给 83966，真实 543；永远按名反查 + 探文章数 |
+| **一次拉取足够** | `page_size` 取 `max(limit, 50)` 一次性拉回再内存排序，避免翻页 |
+
+### 步骤 A1：定位公司（同名多公司自动选）
+
+```python
+from direction_a_cms_to_feishu import find_corp_by_name
+# 在已登录且连上 Chrome 的 page 上下文里：
+corp_id, corp_name = find_corp_by_name(page, "中泰期货股份有限公司")
+# → 打印 7 个候选的文章数，自动选 543（1728 篇）
+```
+
+### 步骤 A2：拉最新 N 篇 + 写入飞书
+
+```python
+from direction_a_cms_to_feishu import run_pipeline_a
+res = run_pipeline_a(
+    company="中泰期货股份有限公司",
+    node_token="Zi5CwEPMKivP2UkpWFucjDrDnDd",  # 目标飞书 Wiki 目录
+    limit=10,                                  # 最新 10 篇
+    log_fn=print,
+)
+# → res = {"total":10,"ok":10,"bad":0,"urls":[...],"corp_id":543,"space_id":...}
+```
+
+### CLI 一行跑通
+
+```bash
+python direction_a_cms_to_feishu.py \
+    --company "中泰期货股份有限公司" \
+    --node Zi5CwEPMKivP2UkpWFucjDrDnDd \
+    --limit 10
+# 加 --dry-run 仅预览转换（不写飞书）；加 --space-id 指定知识库空间
+```
+
+### 已知正确 corp_id（方向 A 实测）
+
+- **中泰期货股份有限公司 = 543**（1728 篇，方向 A 批量写入飞书 2026-07 实测 10/10 成功）
 
 ---
 
@@ -796,6 +970,28 @@ python direction_b_cms_write.py --delete 235619,235620
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v2.7.5 | 2026-07-22 | 🐞 **修 run_client.py 路径飞书凭证未注入**：`run_pipeline_a` 内部漏调 `load_env()`（仅 CLI `main()` 调了），经 `run_client.py` 端到端跑方向 A 时 `KeyError: FEISHU_APP_ID`；已在 `run_pipeline_a` 开头补 `load_env()`。🆕 新增客户「西安东大肛肠」到 client_map.json（dir=GIdfwVWk / sheet=GBGpw6dQ），实战 30/30 写入飞书子目录 `7.22` 并回填审核表 |
+| v2.7.4 | 2026-07-21 | 🐞 **修方向 B 登录静默失败**：`auto_paste.do_login()` 自动点击「GEO账号登录」选项卡，把表单切到 GEO 模式导致运营账号凭据静默失败；移除该点击，默认运营账号模式登录成功。🆕 新增 `run_direction_b.py` 通用驱动，实战把约牛飞书目录 29 篇粘贴回「约牛软件」词包（corp_id=2732, pkg_id=4103，29/29） |
+| v2.7.3 | 2026-07-21 | 🧹 **整理脚本**：删除 4 个一次性 `run_*.py`，统一用 `run_client.py`（方向A）/ `run_direction_b.py`（方向B）通用驱动；同步 SKILL.md |
+| v2.7.2 | 2026-07-21 | 🐞 **修 process_a 自动填表 `run_fill` 未定义（NameError）**：补 import，client_map 简写流程的「自动填表」恢复可用；新增 `run_client.py` 通用方向 A 驱动（基于 client_map，替代分散的 run_*.py 一次性脚本） |
+| v2.7.1 | 2026-07-21 | 🐞 **修简写格式被预过滤误拒**：`中泰期货 20篇` 这类「无动作关键字」指令因预过滤要求含「粘贴/填/生文」被回「没识别动作」；改为 client_map 命中公司名即放行方向 A |
+| v2.7.0 | 2026-07-21 | 🚀 **client_map 简写流程（日常 90% 场景）**：新增 `client_map.json`，用户只需 `@机器人 <公司名> <篇数>`（如 `永安期货 10篇`）即自动匹配顶层目录 + 建当日日期 M.D 子目录 + 粘贴 + 回填审核表，无需每次给链接；中文数字、公司名清洗一并支持。配套 `run_client.py` 可在对话/本地直接驱动 |
+| v2.6.13 | 2026-07-21 | 🔧 **修方向 A 解析**：① 数量支持中文数字（十/二十），`永安期货的最新十篇` 正确拆为 company=永安期货、limit=10（旧正则只认阿拉伯数字把整串当公司名 → 查不到 corp）；② 支持指令里「自建/新建/下面新建 X 目录」自动建子目录并贴入 |
+| v2.6.12 | 2026-07-21 | 🔧 **start_bot 改可见窗口 python.exe**：绕开 venv 的 `pythonw` 在用户机 `0xc0000142` 闪退（连报错都看不到）；启动前先清僵尸进程，避免被单实例保护误拒 |
+| v2.6.11 | 2026-07-21 | 🐞 **修 start_bot.bat 闪退**：改用基础 Python 的 `pythonw.exe`（非 venv）+ 给基础 Python 装齐依赖（lark_oapi/requests/psutil/playwright）；新增 `start_bot_debug.bat` 诊断版；启动文件夹镜像同步 |
+| v2.6.10 | 2026-07-21 | 🔧 **自启脚本用绝对路径 git**，根治开机 PATH 缺失导致自更新静默失败（机器人重启后起不来的根因之一） |
+| v2.5.0 | 2026-07-17 | 🆕 新增 `feishu_bot.py`：飞书群聊机器人（方向 B 自动执行），基于飞书事件「长连接模式」(WebSocket) 本机常驻，@指令即粘贴；复用 `feishu_collect()`+`run_pipeline()`，进度/结果回发群；`prepare_multi.feishu_collect` 与 `auto_paste.run_pipeline` 重构为可导入函数；新增 `start_bot.bat` 启动器；`.env` 增加 `HYH_USER`/`HYH_PWD`（huiyouhua 自动登录） |
+| v2.6.0 | 2026-07-17 | 🆕 **方向 A 全自动跑通（CMS→飞书）**：新增 `direction_a_cms_to_feishu.py`（`find_corp_by_name` 同名多公司自动选有文章的 + `run_pipeline_a` 拉最新 N 篇写入飞书）；固化中泰期货=543（7 个同名 corp 中唯一有 1728 篇）；`feishu_bot.py` 升级为**双向**，新增方向 A 指令解析（`把 <公司> 粘贴到 <飞书目录> 最新N条`）；实战写入中泰期货最新 10 篇到飞书目录 Zi5CwEPMKivP2UkpWFucjDrDnDd（10/10 成功） |
+| v2.6.1 | 2026-07-20 | 🆕 **链接回填飞书电子表格**：新增 `fill_sheet.py`（走 `sheets/v2`：metainfo 取 sheetId → 读列找末行 → PUT /values 追加链接到指定列），实战把永安期货最新 30 篇飞书链接追加到「【GEO服务版-金融】永安期货内容审核表 / 7月内容」B108:B137（30/30）；明确 **电子表格(sheet) ≠ 多维表格(bitable)** 两套 API，应用需 `sheets:spreadsheet` 权限+分享表格给机器人 |
+| v2.6.2 | 2026-07-20 | 🐛 **修 bot 方向 A 两个根因**：① `parse_command` 数量正则只认「最新N条」，漏掉「最新N篇/最新N篇文章」→ 退回默认 10（这就是「每次只粘 10 条」的真因）；现已用 `最新\s*(\d+)` 提取，且 company 自动去尾部「的最新N篇…」；② **进程级单实例锁** `.bot.lock`（含 pid，存活则拒绝重复启动），杜绝多实例各持一把锁抢 Chrome 9222 打架；③ `process_a` 写前校验目标节点 `obj_type`，若是 sheet/bitable/mindnote 直接回群提示「不能贴文章页，请给文件夹链接」（避免误贴表格节点整批失败）。新增 `paste_yn_missing.py`（按标题去重补贴缺失篇章，实战把云南约牛最新 30 篇补满到 D5nLwcbp9itV2ykAhM9cIx9Xnvd，30/30）；新增「飞书节点速查」表 |
+| v2.6.3 | 2026-07-20 | 🆕 **机器人新增方向 F（目录文章链接→填表）**：`@机器人 把 <源目录链接> 的文章链接填到 <表格链接> 第二列 [工作表 X]` 即可把源目录全部 docx 子页链接追加写进目标电子表格指定列（默认 B，从已填下一行起）。`fill_sheet.py` 抽出可复用 `run_fill()`；新增 `collect_d5nl_links.py` 收集目录文章链接。实战：云南约牛 D5nL 目录 30 篇链接填进「约牛内容审核表 / 6月内容」B362:B391（30/30，与已有 361 行 0 重复）。同时修 `process_a` 中 `prepare_multi.get_token()` 的模块名引用 bug（改为直接 `get_token()`） |
+| v2.6.4 | 2026-07-20 | 🔧 **启动与单实例加固**：①新增 `start_bot.bat`（双击即用 `pythonw` **无黑窗口常驻**，日志写 `bot_console.log`，彻底脱离终端/本会话）；② `feishu_bot.py` 加 `_setup_logging()` 把 stdout/stderr 重定向到 `bot_console.log`（append），`pythonw` 无窗口运行时也不丢日志；③单实例锁由普通 `open("w")` 改为 `os.open(O_CREAT|O_EXCL)` **原子创建**，杜绝竞态窗口下双实例同时通过（之前因 WorkBuddy 后台任务自动重试 + 旧锁非原子，反复出现"幽灵双实例"误判，现根治）；④文档补齐启动方式、`(id)` 标注自动去除、数量"条/篇/篇文章"兼容、默认 10 篇、链接自动抓取、解析失败回群 HELP 等容错说明 |
+| v2.6.5 | 2026-07-20 | 🔧 **单实例保护与常驻健壮性**：①单实例保护由「原子锁文件 `.bot.lock`」改为「**进程扫描**」`_acquire_bot_lock()`（扫描系统进程里其它 `feishu_bot.py` 主实例，排除自身/自身 worker/调试脚本），根治 lark ws 库 fork/spawn worker 模型下锁文件被 worker/atexit 误删或父进程误判导致保护失效（v2.6.4 的锁方案在该模型下仍会双开或漏保护）；②`main()` 的 `cli.start()` 包进 `while True` **自愈重连循环**，网络抖动/服务端踢线后自动重连，进程不再因瞬时断线退出；③`start_bot.bat` 改为「双 cmd detached」写法（`start "" cmd.exe /c "bat detached"` → `pythonw`），确保 `pythonw` 不被外层命令的进程树回收；④新增 Windows「启动」文件夹镜像副本 `FeishuWikiPasteBot.bat`，实现**开机自启、彻底脱离 WorkBuddy**。已推送 `ba33f2d` |
+| v2.6.6 | 2026-07-20 | 🆕 **方向 G｜智能生文全自动**：`@机器人 生文 <公司> <词包> <数量> 粘贴到<飞书目录> 填到<表格>` → 机器人自己点后台「智能生文」→选词包→填数量→等生成完→粘贴飞书（方向A）→填表（方向F），每步回群一句。新增 `shengwen_pipeline.py`（5步流水线，提交时自动拦截 fetch 记录真实生文接口到 `shengwen_api_capture.json`）；`parse_command` 加 `parse_g`（优先于 A/B/F，避免误判），`do_message` 加方向G分发与更新指令分发，`process_g`/`process_update` 实现；`start_bot.bat` 与启动文件夹镜像均在启动前 `git pull` 保最新；新增 `@机器人 更新` 指令（git pull + `--wait-exit` 自重启用新进程，免手动）。配套 `run_shengwen.bat` 双击交互式启动器 |
+| v2.6.7 | 2026-07-20 | 🔧 **方向 G 改为直接 API 生文（根治公司作用域事故）**：`shengwen_pipeline.py` 由「模拟点击 UI」重构为**直接调 huiyouhua 后端接口**——`corp/active`+`auth/changecorp` 按名定位 corp（同名多 corp 逐个探测，中泰期货 7 个同名 corp 仅 543 有内容自然命中）→ `knowledge-base` 取 `product_kb_id` → `keyword/package` 取 `keyword_package_id`（词包名称字段是 `core_keyword`，非 `name`）→ `POST /creation/tasks`(`product_kb_id`+`keyword_package_id`+`article_count`，**无 corp_id**，公司由 product_kb_id 决定）→ 轮询 `creation/articles` 筛新文章 → 飞书顶层目录自动建「当天日期 M.D」子目录并 `batch_paste` 粘贴 → 可选 `run_fill` 填表。已验证：中泰期货=2198/1773/543、长岛民宿=4187/5024/2692 解析正确；`connect_cdp` 加 asyncio 重试防护（同进程连续两条 G 指令不崩）；`feishu_bot.py` 的 `process_g` 回发逻辑同步更新 |
+| v2.6.8 | 2026-07-20 | 🐞 **根治「僵尸进程占坑死锁」+ 静默不回**：根因是 `@机器人 更新` 自更新时旧进程退出、新进程启动却发现「还有另一个 feishu_bot 实例」（开机自启那份也被计入）→ 新进程被单实例保护拒掉，只剩一个连不上飞书也不响应消息的僵尸进程占坑，后续所有启动全被拒。修复：① 新增**心跳自愈**——活实例每轮重连 + 收到消息时写 `.bot.heartbeat`，新实例发现挡路实例时若其心跳超 90s（卡死/连不上）或心跳不一致，则 `kill` 后接管，不再死锁；② `process_update` 拉起新实例改传 `--replace`，自更新必定强制替换；③ `do_message` 对「@ 但不含动作关键字」的消息从静默跳过改为回一句「我在，但没识别到动作」，避免被误认为死机。`.gitignore` 加 `.bot.heartbeat` |
+| v2.6.9 | 2026-07-21 | 🔧 **方向 A 粘贴改为对话内全自动 + 修子目录建块 bug**：① 实测沙箱可**自起调试 Chrome + 自动登录 huiyouhua**（`HYH_PWD` 在 `.env`，`ensure_chrome()` 用临时 profile 拉起并登录），故方向 A（CMS 文章→飞书）可在对话里直接跑完，**不必用户双击**；填表只用飞书 token，更不依赖 Chrome。② 修 `ensure_date_subdir` 建日期子目录的块格式 bug：`block_type:2` 必须用 `"text"` 键（含 `text_element_style`），误用 `"paragraph"` 会被飞书拒 `1770001 invalid param`（永安期货这次复现失败，中泰期货那次侥幸成功）。③ `fill_sheet.run_fill` 新增 `date_label`：第二列填链接、第一列整块合并写日期（如「7月21日」），已用于云南约牛/永安期货审核表。④ 新增 `run_yongan_paste.py`/`run_yunan.py` 一键驱动模板（方向A 粘贴最新 N 篇 + 建日期子目录 + 填表）。实测：永安期货 corp=3258，最新 20 篇粘贴进 `KXcXwjr...` 下 `7.21` 子目录，填 `YQAywVgk...`（B138:B157 链接 / A138:A157 合并「7月21日」）全 20/20 成功 |
+| v2.4.2 | 2026-07-17 | 🆕 `auto_paste.py` 参数化（去掉永安期货硬编码，改 `--company/--pkg/--in` 参数，支持任意公司/词包）；🆕 新增 `prepare_multi.py`：父目录取「指定日期子目录」文章并合并去重（自动归一化分隔符、逐层收集 doc）；固化 贵阳脉通血管医院有限公司=3049 / 贵阳静脉曲张医院推荐=5539（59 篇实测落库，含 6/29·6/30·7.1·7/2 四子目录）；`.gitignore` 增加 `*_articles.json`/`*_cms_write_results.json` 通用忽略 |
 | v2.4.0 | 2026-07-15 | 🆕 新增 `cms_discover_ids.py`：通过 API 自动反查公司 corp_id + 词包 pkg_id（corp/active 列公司 + auth/changecorp 切换 + keyword/package 取词包），彻底免盲猜；实测成都川蜀血管病医院有限公司=3041 / 成都静脉曲张医院=5538 |
 | v2.3.0 | 2026-07-15 | 🆕 方向 B 实战踩坑固化：新增 `launch_chrome_debug.py`/`direction_b_cms_write.py`/`direction_b_run.py`；补充 corp_id 陷阱(corp_id 错→界面看不见)、Chrome 调试端口必须非默认配置两大坑；新增 `--verify-corp`/`--auto-corp`/`--preflight` 防错机制；实测 corp_id 龙马潭新时代口腔诊所=1155 |
 | v2.2.0 | 2026-07-14 | 🆕 方向 B：Wiki→CMS 完整 SOP（飞书块→HTML 转换、CMS 创建/删除 API）；新增 5 条错误速查（标题丢失、重复、更新 API 404、批量超时）；新增 paste_utils 反向函数 |
