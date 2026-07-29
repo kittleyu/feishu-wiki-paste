@@ -209,10 +209,20 @@ def discover_ids(page, company, pkg, user_corp_id=None, log_fn=print):
         "(async()=>{var r=await fetch('/yunying/v1/corp/active',{method:'GET'});"
         "var d=await r.json();return d.data.corps;})()")
     corp = None
-    for c in corps:
-        if (c.get("name") or "") == company:
-            corp = c
-            break
+    if user_corp_id:
+        for c in corps:
+            if str(c.get("id")) == str(user_corp_id):
+                corp = c
+                break
+        if corp:
+            print(f"ℹ️ 使用指定的 user_corp_id={user_corp_id} → {corp.get('name')}")
+        else:
+            print(f"⚠️ user_corp_id={user_corp_id} 未在可访问公司中找到，回退名称匹配")
+    if not corp:
+        for c in corps:
+            if (c.get("name") or "") == company:
+                corp = c
+                break
     if not corp:
         for c in corps:
             if company in (c.get("name") or ""):

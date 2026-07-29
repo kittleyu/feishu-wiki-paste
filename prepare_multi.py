@@ -110,8 +110,11 @@ def feishu_collect(node_token, subdirs=None, out_path=None, space_id=None):
         matched = []
         for c in children:
             t = c.get("title", "")
+            nt = norm(t)
+            if not nt:
+                continue
             for s in subs:
-                if norm(s) and (norm(s) in norm(t) or norm(t) in norm(s)):
+                if norm(s) and (norm(s) in nt or nt in norm(s)):
                     matched.append(c)
                     break
         print(f"匹配到子目录 ({len(matched)}):")

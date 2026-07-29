@@ -34,6 +34,10 @@ def main():
     ap.add_argument("--node", required=True, help="源飞书 Wiki 目录 node_token")
     ap.add_argument("--company", required=True, help="CMS 公司全名（模糊匹配），如 示例客户")
     ap.add_argument("--pkg", required=True, help="CMS 词包名（模糊匹配），如 示例词包")
+    ap.add_argument("--subdirs", default=None,
+                    help="可选：父目录下指定子目录名，逗号分隔，如 7.16,7.20,7.21,7.23")
+    ap.add_argument("--corp-id", default=None,
+                    help="可选，强制指定 corp_id（绕过同名公司自动选择，如示例期货公司有多个同名 corp）")
     ap.add_argument("--dry", action="store_true", help="仅读取统计，不写 CMS")
     ap.add_argument("--out", default="bot_articles.json")
     args = ap.parse_args()
@@ -45,7 +49,7 @@ def main():
 
     out_path = os.path.join(HERE, args.out)
     print(f">>> [阶段1] 读取飞书目录 {args.node} ...", flush=True)
-    articles = feishu_collect(args.node, None, out_path)
+    articles = feishu_collect(args.node, args.subdirs, out_path)
     if not articles:
         print("❌ 没读到任何文章，请检查目录链接是否正确 / 是否有权限", flush=True)
         return
@@ -61,7 +65,8 @@ def main():
 
     print(f"\n>>> [阶段2] 写 CMS：公司={args.company} 词包={args.pkg}", flush=True)
     res = ap_mod.run_pipeline(args.company, args.pkg, out_path,
-                              os.path.join(HERE, "bot_cms_results.json"))
+                              os.path.join(HERE, "bot_cms_results.json"),
+                              user_corp_id=args.corp_id)
     print(">>> 结果:", res, flush=True)
     if res and res.get("bad", 0) == 0:
         print(f"🎉 完成！{res['ok']} 篇已粘贴到「{args.company} / {args.pkg}」", flush=True)
