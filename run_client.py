@@ -32,6 +32,27 @@ def load_map():
         return json.load(f)
 
 
+def resolve_company(name, cmap):
+    """把用户输入的公司名解析成 client_map 里的 key。
+
+    匹配顺序：精确 → aliases（含子串）→ 子串（key 与输入任一方向包含）。
+    返回 cmap 的 key；找不到返回 None。
+    """
+    if name in cmap:
+        return name
+    # 别名匹配（含子串，避免「示例膏药」漏掉）
+    for k, v in cmap.items():
+        for a in (v.get("aliases") or []):
+            if name == a or a in name or name in a:
+                return k
+    # 子串兜底（与 feishu_bot.py 解析一致）
+    cands = [k for k in cmap if k in name or name in k]
+    if not cands:
+        return None
+    cands.sort(key=lambda x: -len(x))
+    return cands[0]
+
+
 def today_subdir():
     d = datetime.date.today()
     return f"{d.month}.{d.day}"
@@ -56,24 +77,26 @@ def main():
     args = ap.parse_args()
 
     cmap = load_map()
-    if args.company not in cmap:
-        print(f"❌ client_map.json 中找不到「{args.company}」")
+    key = resolve_company(args.company, cmap)
+    if key is None:
+        print(f"❌ client_map.json 中找不到「{args.company}」（含别名/子串匹配）")
         print("   已有客户：" + " / ".join(cmap.keys()))
         sys.exit(1)
-    entry = cmap[args.company]
+    entry = cmap[key]
     dir_node = entry["dir_node"]
     sheet_node = entry.get("sheet_node")
 
     subdir = args.subdir or today_subdir()
     st_hint = {1: "已审核通过", -1: "审核驳回"}.get(args.audit_status,
                  "全部状态" if args.audit_status is None else f"audit_status={args.audit_status}")
-    print(f">>> 公司={args.company}  数量={args.limit}  子目录={subdir}  审核状态={st_hint}  "
+    alias_hint = "" if key == args.company else f"  (匹配到「{key}」)"
+    print(f">>> 公司={args.company}{alias_hint}  数量={args.limit}  子目录={subdir}  审核状态={st_hint}  "
           f"目录={dir_node}  审核表={sheet_node or '(未配置)'}")
 
     # 1) 粘贴到飞书（建/复用子目录）
     from direction_a_cms_to_feishu import run_pipeline_a
     res = run_pipeline_a(
-        args.company, dir_node, args.limit,
+        key, dir_node, args.limit,
         subdir=subdir,
         out_file=os.path.join(HERE, "bot_direction_a_results.json"),
         dry_run=args.dry_run,
