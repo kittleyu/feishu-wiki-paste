@@ -14,5 +14,11 @@
   "示例肛肠医院": {
     "dir_node": "YOUR_DIR_NODE_D",
     "sheet_node": "YOUR_SHEET_NODE_B"
+  },
+  "示例客户": {
+    "dir_node": "CReawQbXbiDhPckEQ9jcsm0kn3c",
+    "sheet_node": "XAFUwUd8ri2AVrknusXcft31nre",
+    "full_name": "内蒙古示例膏药健康管理服务有限公司",
+    "pkg": "示例膏药膏药贴"
   }
 }
