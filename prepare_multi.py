@@ -20,15 +20,34 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))  # 工作区根�
 
 
 def load_env():
-    p = os.path.join(ROOT, ".env")
-    if os.path.isfile(p):
-        with open(p, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    """加载 .env（去敏：真实凭证/租户配置只在本机 .env，绝不入库）。
+
+    依次读取 技能目录/.env 与 工作区根/.env，后者覆盖前者（保留本地现有配置）。
+    """
+    for base in (HERE, ROOT):
+        p = os.path.join(base, ".env")
+        if os.path.isfile(p):
+            _apply_env_file(p)
+
+
+def _apply_env_file(p):
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+def feishu_wiki_domain():
+    """飞书知识库域名（去敏：真实值由 .env 的 FEISHU_WIKI_DOMAIN 提供，仓库内不硬编码）。"""
+    return os.environ.get("FEISHU_WIKI_DOMAIN", "https://YOUR_TENANT.feishu.cn/wiki")
+
+
+def default_space_id():
+    """默认知识库 space_id（去敏：真实值由 .env 的 FEISHU_DEFAULT_SPACE_ID 提供）。"""
+    return os.environ.get("FEISHU_DEFAULT_SPACE_ID", "")
 
 
 def get_token():
@@ -100,7 +119,7 @@ def feishu_collect(node_token, subdirs=None, out_path=None, space_id=None):
     返回 [{title, content}] 列表；若 out_path 给定则同时落盘。供 bot 与 CLI 共用。"""
     load_env()
     token = get_token()
-    space_id = space_id or get_node_space(token, node_token) or "YOUR_SPACE_ID"
+    space_id = space_id or get_node_space(token, node_token) or default_space_id()
     print("space_id =", space_id)
 
     docs = []

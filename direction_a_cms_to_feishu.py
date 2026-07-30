@@ -5,17 +5,17 @@ direction_a_cms_to_feishu.py — 方向 A：CMS 文章 → 飞书 Wiki 目录（
 ================================================================================
 把某公司在 huiyouhua CMS 里「最新 N 篇」文章，批量创建到飞书知识库指定目录下。
 
-⚠️ 实战踩坑（2026-07 示例期货公司）：
+⚠️ 实战踩坑（通用经验）：
   - 用户给的「公司编号」(如 YOUR_WRONG_ID_1) 不是真实 corp_id，且同名公司可能有多个
-    （示例期货公司在 CMS 里竟有 7 个同名 corp！其中 6 个是空的，只有 YOUR_CORP_ID_0 有 1728 篇）。
+    （某期货客户在 CMS 里竟有 7 个同名 corp！其中 6 个是空的，只有 1 个有内容）。
     → 按公司名匹配到所有候选，逐个探一下文章数，选「有文章且最多」的那个。
   - creation/articles 已含完整 content（HTML），可直接转飞书块，无需再逐篇 GET。
   - 排序用 created_at（ISO8601，+08:00），降序取最新 N 篇。
 
 用法（CLI）：
     python direction_a_cms_to_feishu.py \
-        --company "示例期货公司" \
-        --node YOUR_DIR_NODE_B \
+        --company "示例客户公司" \
+        --node YOUR_DIR_NODE \
         --limit 10
 
 也可被 bot 调用：
@@ -32,7 +32,7 @@ if hasattr(sys.stderr, "reconfigure"):
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from prepare_multi import load_env, get_token, get_node_space, list_nodes
+from prepare_multi import load_env, get_token, get_node_space, list_nodes, default_space_id
 from paste_utils import batch_paste, create_wiki_node_and_write
 # 复用 auto_paste 的 Chrome 登录/连接工具（仅导入，不触发 playwright 顶层加载）
 from auto_paste import (ensure_chrome, check_logged_in, do_login,
@@ -184,7 +184,7 @@ def run_pipeline_a(company, node_token, limit=10, log_fn=print,
 
         # 3) 飞书写入
         token = get_token()
-        space_id = space_id or get_node_space(token, node_token) or "YOUR_SPACE_ID"
+        space_id = space_id or get_node_space(token, node_token) or default_space_id()
         # 若指定子目录，先建/复用子目录，贴入子目录而非父目录
         if subdir:
             children = list_nodes(token, space_id, node_token)
@@ -236,7 +236,7 @@ def run_pipeline_a(company, node_token, limit=10, log_fn=print,
 def main():
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--company", required=True, help="公司名，如 示例期货公司")
+    ap.add_argument("--company", required=True, help="公司名，如 示例客户公司")
     ap.add_argument("--node", required=True, help="目标飞书 Wiki 目录 node_token")
     ap.add_argument("--limit", type=int, default=10, help="最新几篇（默认 10）")
     ap.add_argument("--space-id", default=None)

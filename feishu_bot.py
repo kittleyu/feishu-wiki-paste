@@ -25,7 +25,8 @@ import os, sys, json, re, threading, time, psutil, requests
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from prepare_multi import load_env, feishu_collect, get_token, get_node_space, list_nodes
+from prepare_multi import (load_env, feishu_collect, get_token, get_node_space,
+                           list_nodes, feishu_wiki_domain, default_space_id)
 
 load_env()
 os.environ.setdefault("HYH_USER", "daixiaoyu")
@@ -61,16 +62,19 @@ _BOT_LOCK = os.path.join(HERE, ".bot.lock")
 _HEARTBEAT = os.path.join(HERE, ".bot.heartbeat")
 
 # ── 客户映射表：公司名 → 飞书顶层目录 + 审核表格 ──
+# 优先读取 client_map.local.json（含真实客户数据，已 gitignore）；
+# 若不存在则回退 client_map.json（脱敏模板，供他人参考结构）。
 _CLIENT_MAP = {}
 def _load_client_map():
-    """加载 client_map.json（若文件不存在则为空）。"""
-    fp = os.path.join(HERE, "client_map.json")
-    if os.path.exists(fp):
-        try:
-            with open(fp, "r", encoding="utf-8") as f:
-                _CLIENT_MAP.update(json.load(f))
-        except Exception as e:
-            print(f"⚠️ 加载 client_map.json 失败：{e}")
+    """加载客户映射：优先 client_map.local.json，回退 client_map.json。"""
+    for name in ("client_map.local.json", "client_map.json"):
+        fp = os.path.join(HERE, name)
+        if os.path.exists(fp):
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    _CLIENT_MAP.update(json.load(f))
+            except Exception as e:
+                print(f"⚠️ 加载 {name} 失败：{e}")
 _load_client_map()
 
 
@@ -175,7 +179,7 @@ HELP = (
     "多子目录：@我 粘贴 <父目录链接> 下面 6/29 6/30 7.1 7/2 到 <公司全名> <词包名>\n"
     "【方向 A｜CMS→飞书】\n"
     "@我 把 <公司全名>(id可选) 粘贴到 <飞书目录链接> 最新10条\n"
-    "示例：@我 把 示例期货公司 粘贴到 https://YOUR_TENANT.feishu.cn/wiki/Zi5Cxxx 最新30篇\n"
+    "示例：@我 把 示例客户公司 粘贴到 https://YOUR_TENANT.feishu.cn/wiki/Zi5Cxxx 最新30篇\n"
     "【方向 F｜目录链接→填表】\n"
     "@我 把 <源目录链接> 的文章链接填到 <表格链接> 第二列\n"
     "示例：@我 把 https://YOUR_TENANT.feishu.cn/wiki/D5nLxxx 的文章链接填到 https://YOUR_TENANT.feishu.cn/wiki/PI5xxx 第二列\n"
@@ -487,9 +491,9 @@ def process_fill(chat_id, parsed):
         from fill_sheet import run_fill
         src, dst, col, sheet = parsed["src"], parsed["dst"], parsed["col"], parsed.get("sheet")
         token = get_token()
-        space = get_node_space(token, src) or "YOUR_SPACE_ID"
+        space = get_node_space(token, src) or default_space_id()
         items = list_nodes(token, space, src)
-        urls = [f"https://YOUR_TENANT.feishu.cn/wiki/{it['node_token']}"
+        urls = [f"{feishu_wiki_domain()}/{it['node_token']}"
                 for it in items if (it.get("obj_type") or "") == "docx"]
         if not urls:
             send_text(chat_id, "⚠️ 源目录没有文章(docx)子节点，无法填表")

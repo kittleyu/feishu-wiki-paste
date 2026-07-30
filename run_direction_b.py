@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-run_direction_b.py — 方向 B 通用驱动（飞书 Wiki → 示例客户/某司 CMS 词包）
+run_direction_b.py — 方向 B 通用驱动（飞书 Wiki → 某司 CMS 词包）
 
 用法：
     # 仅读取 + 统计（不写 CMS），确认篇数与标题
-    python run_direction_b.py --node <飞书目录token> --company 示例客户 --pkg 示例词包 --dry
+    python run_direction_b.py --node <飞书目录node_token> --company 示例客户A --pkg 示例词包A --dry
 
     # 读取 + 转换 + 写 CMS 词包（先探路 1 篇，再全量写 + 逐篇校验）
-    python run_direction_b.py --node <飞书目录token> --company 示例客户 --pkg 示例词包
+    python run_direction_b.py --node <飞书目录node_token> --company 示例客户A --pkg 示例词包A
 
 说明：
     - 复用 prepare_multi.feishu_collect 读飞书并转 HTML
@@ -32,12 +32,12 @@ sys.path.insert(0, HERE)
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--node", required=True, help="源飞书 Wiki 目录 node_token")
-    ap.add_argument("--company", required=True, help="CMS 公司全名（模糊匹配），如 示例客户")
-    ap.add_argument("--pkg", required=True, help="CMS 词包名（模糊匹配），如 示例词包")
+    ap.add_argument("--company", required=True, help="CMS 公司全名（模糊匹配），如 示例客户A")
+    ap.add_argument("--pkg", required=True, help="CMS 词包名（模糊匹配），如 示例词包A")
     ap.add_argument("--subdirs", default=None,
                     help="可选：父目录下指定子目录名，逗号分隔，如 7.16,7.20,7.21,7.23")
     ap.add_argument("--corp-id", default=None,
-                    help="可选，强制指定 corp_id（绕过同名公司自动选择，如示例期货公司有多个同名 corp）")
+                    help="可选，强制指定 corp_id（绕过同名公司自动选择，如某客户有多个同名 corp）")
     ap.add_argument("--dry", action="store_true", help="仅读取统计，不写 CMS")
     ap.add_argument("--out", default="bot_articles.json")
     args = ap.parse_args()

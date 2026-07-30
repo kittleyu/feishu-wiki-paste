@@ -12,7 +12,7 @@ cms_discover_ids.py — 通过 CMS API 自动查出「公司 corp_id」和「词
     注意：该接口只返回【当前公司】的词包，所以要先 changecorp 到目标公司再查。
 
 用法：
-    python cms_discover_ids.py --company "示例血管医院" --pkg "示例静脉曲张医院"
+    python cms_discover_ids.py --company "示例客户公司" --pkg "示例词包"
     # 只查公司不查词包：
     python cms_discover_ids.py --company "某某公司"
     # 若公司已切对，只查词包：

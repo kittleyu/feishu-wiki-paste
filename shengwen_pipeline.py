@@ -17,7 +17,7 @@ cookie，通过 Playwright 的 APIRequestContext 发请求；不操作页面 DOM
      - 对每个候选 corp：GET /yunying/v1/auth/changecorp?corp_id=X 切换
                          GET /yunying/v1/knowledge-base        → 找产品知识库 id
                          GET /yunying/v1/keyword/package      → 找词包 id
-     - 选「产品+词包都命中」的 corp（示例期货公司 7 个同名 corp 只有 YOUR_CORP_ID_0 有内容，自然命中）
+     - 选「产品+词包都命中」的 corp（某期货公司曾有 7 个同名 corp，仅 1 个有内容，自然命中）
   2. 生文：POST /yunying/v1/creation/tasks
             body={"product_kb_id":int,"keyword_package_id":int,"article_count":int}
             ⚠️ 无 corp_id 字段，公司完全由 product_kb_id 决定（绕开 UI 公司作用域坑）
@@ -31,9 +31,9 @@ cookie，通过 Playwright 的 APIRequestContext 发请求；不操作页面 DOM
 
 用法（CLI）：
     python shengwen_pipeline.py \
-        --company "示例期货公司" --pkg "示例期货公司" --count 20 \
-        --node YOUR_DIR_NODE_A \
-        --spreadsheet YOUR_SHEET_NODE_C
+        --company "示例客户公司" --pkg "示例词包" --count 20 \
+        --node YOUR_DIR_NODE \
+        --spreadsheet YOUR_SHEET_NODE
 
 也可被 bot 调用：
     from shengwen_pipeline import run_shengwen_pipeline
@@ -50,7 +50,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from auto_paste import ensure_chrome, PORT
-from prepare_multi import load_env, get_token, get_node_space, list_nodes
+from prepare_multi import load_env, get_token, get_node_space, list_nodes, default_space_id
 from paste_utils import batch_paste, create_wiki_node_and_write
 from fill_sheet import run_fill
 
@@ -58,7 +58,7 @@ from fill_sheet import run_fill
 HUIYOUHUA = "https://yunying.huiyouhua.com"
 GEN_POLL_INTERVAL = 15        # 轮询间隔（秒）
 GEN_TIMEOUT = 30 * 60         # 单次生文最长等 30 分钟（20 篇约 18 分钟）
-DEFAULT_SPACE = "YOUR_SPACE_ID"
+DEFAULT_SPACE = default_space_id()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -120,17 +120,17 @@ def resolve_ids(req, company, pkg_name, log_fn=print):
     """按公司名+词包名解析出 (product_kb_id, keyword_package_id, corp_id)。
 
     采用「候选 corp 遍历 + 双向模糊匹配」策略：
-      - 公司名匹配 corp（处理同名多 corp，如示例期货公司有 7 个，仅 YOUR_CORP_ID_0 有知识库）
+      - 公司名匹配 corp（处理同名多 corp，如某期货公司有 7 个，仅 1 个有知识库）
       - 在每个候选 corp 下查知识库/词包（接口按当前 corp 作用域过滤）
       - 选产品+词包都命中的 corp（分数最高者）
     """
     corps = _get(req, "/yunying/v1/corp/active")["data"]["corps"]
-    # 快路径：公司名直接匹配 corp 名（示例期货公司 / 示例期货公司）
+    # 快路径：公司名直接匹配 corp 名（如 示例客户公司）
     cands = [c for c in corps if company in (c.get("name") or "")
              or (c.get("name") or "") in company]
     if not cands:
         # 慢路径：用户给的「公司名」可能是产品知识库名（如「示例民宿」），
-        # 而 corp 名不同（如「长岛万顺渔家中心」）。遍历所有 corp 按知识库名匹配。
+        # 而 corp 名不同（如「示例民宿公司」）。遍历所有 corp 按知识库名匹配。
         log_fn(f"⚠️ 公司名未直接匹配 corp，改按产品知识库名匹配"
                f"（遍历 {len(corps)} 个 corp）…")
         for c in corps:
@@ -269,8 +269,8 @@ def run_shengwen_pipeline(company, pkg_name, count, feishu_node_token=None,
     """执行完整的「智能生文 → 粘贴 → 填表」流水线（直接 API 版）。
 
     参数：
-        company:           公司名（用于定位 corp 与产品知识库，如 "示例期货公司"）
-        pkg_name:          关键词包名（如 "示例期货公司" / "示例民宿推荐"）
+        company:           公司名（用于定位 corp 与产品知识库，如 "示例客户公司"）
+        pkg_name:          关键词包名（如 "示例词包" / "示例民宿推荐"）
         count:             生成数量
         feishu_node_token: 飞书 Wiki【顶层公司目录】node_token（自动建日期子目录）
         spreadsheet_url:   目标表格 URL（None 则跳过填表）
@@ -368,13 +368,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例：
-  python shengwen_pipeline.py --company "示例期货公司" --pkg "示例期货公司" --count 20 \\
-      --node YOUR_DIR_NODE_A --spreadsheet YOUR_SHEET_NODE_C
-  python shengwen_pipeline.py --company "示例期货公司" --pkg "示例期货公司" --count 5 --dry-run
+  python shengwen_pipeline.py --company "示例客户公司" --pkg "示例词包" --count 20 \\
+      --node YOUR_DIR_NODE --spreadsheet YOUR_SHEET_NODE
+  python shengwen_pipeline.py --company "示例客户公司" --pkg "示例词包" --count 5 --dry-run
         """,
     )
-    parser.add_argument("--company", required=True, help="公司名（如「示例期货公司」）")
-    parser.add_argument("--pkg", required=True, help="关键词包名（如「示例期货公司」）")
+    parser.add_argument("--company", required=True, help="公司名（如「示例客户公司」）")
+    parser.add_argument("--pkg", required=True, help="关键词包名（如「示例词包」）")
     parser.add_argument("--count", type=int, default=10, help="生成数量（默认 10）")
     parser.add_argument("--node", default=None, help="飞书 Wiki 顶层目录 node_token（粘贴目标）")
     parser.add_argument("--spreadsheet", default=None, help="表格 URL（填表目标）")

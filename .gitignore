@@ -1,4 +1,6 @@
 .env
+# 真实客户映射（含飞书目录/审核表 token），本地保留、绝不推 GitHub
+client_map.local.json
 __pycache__/
 *.pyc
 .DS_Store

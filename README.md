@@ -22,15 +22,18 @@ FEISHU_APP_ID=cli_xxxx
 FEISHU_APP_SECRET=xxxx
 HYH_USER=运营账号
 HYH_PWD=运营密码
+# 可选（去敏）：真实租户域名 / 默认 space_id，不填则用代码内占位默认值
+FEISHU_WIKI_DOMAIN=https://YOUR_TENANT.feishu.cn/wiki
+FEISHU_DEFAULT_SPACE_ID=
 ```
-> ⚠️ `.env` 已被 `.gitignore` 排除，真实凭证**永不**进仓库。提交前 `sync.sh` 会扫描疑似真实凭证并中止提交。
+> ⚠️ `.env` 已被 `.gitignore` 排除，真实凭证/租户配置**永不**进仓库。`.env` 可放在「技能目录」或「工作区根目录」下（后者优先）。提交前 `sync.sh` 会扫描疑似真实凭证并中止提交。
 
 ### 2. 客户映射（client_map.json）
 简写指令（如 `示例期货公司 30篇`）依赖它。每客户配「飞书顶层目录节点 + 审核表节点」：
 ```json
 {
-  "示例期货公司": { "dir_node": "ZChcwfF...", "sheet_node": "DUXVwK..." },
-  "示例客户":     { "dir_node": "QucCwt...", "sheet_node": "PI5owc..." }
+  "示例期货公司": { "dir_node": "YOUR_DIR_NODE...", "sheet_node": "YOUR_SHEET_NODE..." },
+  "示例客户":     { "dir_node": "YOUR_PARENT_NODE...", "sheet_node": "YOUR_SHEET_NODE_YN..." }
 }
 ```
 加新客户：直接告诉我「公司名 + 文章目录链接 + 审核表链接」，我会写入并同步仓库。

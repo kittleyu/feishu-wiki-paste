@@ -15,6 +15,7 @@ v2.2.0 新增：Wiki→CMS 反向粘贴（飞书块→HTML 转换 + CMS 文章�
 import requests, json, time, re, os, sys
 from datetime import datetime
 from html.parser import HTMLParser
+from prepare_multi import default_space_id, feishu_wiki_domain
 
 # Windows 终端默认 GBK，重配置 stdout/stderr 为 utf-8，避免 emoji/中文打印报错
 if hasattr(sys.stdout, "reconfigure"):
@@ -541,7 +542,7 @@ def batch_paste(articles, token, space_id, parent_node,
             print(f"  ❌ {error}")
             failed_indices.add(i)
         else:
-            wiki_urls[i] = f"https://YOUR_TENANT.feishu.cn/wiki/{node_token}"
+            wiki_urls[i] = f"{feishu_wiki_domain()}/{node_token}"
             print(f"  ✅ {wiki_urls[i]}")
             success += 1
 
@@ -605,7 +606,7 @@ def retry_failed(state_file=None, token=None, space_id=None):
     if token is None:
         token = get_token()
     if space_id is None:
-        space_id = params.get("space_id", "YOUR_SPACE_ID")
+        space_id = params.get("space_id", default_space_id())
 
     # 修复：让 batch_paste 只处理 failed 索引
     # 但 batch_paste 需要知道哪些已经成功了，避免重复处理
@@ -834,8 +835,8 @@ def batch_wiki_to_cms(articles, token, space_id, cms_corp_id, cms_pkg_id,
 
     articles: 来自 get_wiki_articles() 的列表
     token: 飞书 tenant_access_token
-    cms_corp_id: CMS 真实公司 ID（务必核对，如 YOUR_CORP_ID_5=示例口腔诊所）
-    cms_pkg_id: 词包 ID（如 YOUR_PKG_ID_1=示例口腔医院）
+    cms_corp_id: CMS 真实公司 ID（务必先用 cms_discover_ids.py 反查核对）
+    cms_pkg_id: 词包 ID（可先用 cms_discover_ids.py 反查）
     dry_run: 仅读取并转换，不写入 CMS
 
     返回 [{title, html, error?}, ...]
@@ -915,7 +916,7 @@ if __name__ == "__main__":
         articles = json.load(f)
 
     token = None if args.dry_run else get_token()
-    space_id = "YOUR_SPACE_ID"
+    space_id = default_space_id()
 
     if args.dry_run:
         preview_blocks(articles, output_file=args.output)

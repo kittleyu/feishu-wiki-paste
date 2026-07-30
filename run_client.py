@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-run_client.py — 方向 A 通用驱动（基于 client_map.json）
+run_client.py — 方向 A 通用驱动（基于 client_map，优先 .local.json）
 
 用法：
   python run_client.py <公司名> [数量] [--subdir 7.22] [--dry-run]
-  python run_client.py 示例期货公司 10
-  python run_client.py 示例期货公司 20 --subdir 7.22
+  python run_client.py 示例客户A 10
+  python run_client.py 示例客户B 20 --subdir 7.22
 
 行为：
-  1. 从 client_map.json 读取该公司「顶层目录 node」+「审核表 node」
+  1. 从 client_map（优先 client_map.local.json）读取该公司「顶层目录 node」+「审核表 node」
   2. 在顶层目录下建/复用子目录（默认当日日期 M.D，可用 --subdir 覆盖）
   3. 拉 CMS 最新 N 篇 → 写入该子目录
   4. 把链接回填审核表（B 列链接，A 列合并写日期「M月D日」）
@@ -28,8 +28,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def load_map():
-    with open(os.path.join(HERE, "client_map.json"), encoding="utf-8") as f:
-        return json.load(f)
+    """加载客户映射：优先 client_map.local.json，回退 client_map.json。"""
+    for name in ("client_map.local.json", "client_map.json"):
+        fp = os.path.join(HERE, name)
+        if os.path.exists(fp):
+            with open(fp, encoding="utf-8") as f:
+                return json.load(f)
+    raise FileNotFoundError("未找到 client_map.local.json / client_map.json")
 
 
 def resolve_company(name, cmap):
@@ -40,7 +45,7 @@ def resolve_company(name, cmap):
     """
     if name in cmap:
         return name
-    # 别名匹配（含子串，避免「示例膏药」漏掉）
+    # 别名匹配（含子串，避免「示例客户别名」漏掉）
     for k, v in cmap.items():
         for a in (v.get("aliases") or []):
             if name == a or a in name or name in a:
@@ -68,7 +73,7 @@ def subdir_to_datelabel(s):
 
 def main():
     ap = argparse.ArgumentParser(description="方向A：CMS最新N篇→飞书目录(建日期子目录)→填审核表")
-    ap.add_argument("company", help="client_map.json 里的公司名，如 示例期货公司")
+    ap.add_argument("company", help="client_map（优先 .local.json）里的公司名，如 示例客户A")
     ap.add_argument("limit", nargs="?", default=10, type=int, help="最新几篇，默认 10")
     ap.add_argument("--subdir", default=None, help="子目录名，默认当日日期 M.D（如 7.22）")
     ap.add_argument("--audit-status", type=int, default=None,

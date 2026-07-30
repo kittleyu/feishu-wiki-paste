@@ -1,29 +1,14 @@
 {
-  "示例期货公司": {
-    "dir_node": "YOUR_DIR_NODE_E",
-    "sheet_node": "YOUR_SHEET_NODE_A"
+  "_说明": "这是脱敏模板，仅供他人参考数据结构。真实客户映射请放在同目录的 client_map.local.json（已加入 .gitignore，不会推到 GitHub）。脚本加载时优先读取 client_map.local.json，不存在才读本文件。",
+  "示例客户A": {
+    "dir_node": "YOUR_FEISHU_WIKI_DIR_NODE",
+    "sheet_node": "YOUR_AUDIT_SHEET_NODE"
   },
-  "示例期货公司": {
-    "dir_node": "YOUR_DIR_NODE_A",
-    "sheet_node": "YOUR_SHEET_NODE_C"
-  },
-  "示例客户": {
-    "dir_node": "YOUR_PARENT_NODE_A",
-    "sheet_node": "PI5owcGzii2mnSkFvjSc01H2nvg"
-  },
-  "示例肛肠医院": {
-    "dir_node": "YOUR_DIR_NODE_D",
-    "sheet_node": "YOUR_SHEET_NODE_B"
-  },
-  "示例客户": {
-    "dir_node": "CReawQbXbiDhPckEQ9jcsm0kn3c",
-    "sheet_node": "XAFUwUd8ri2AVrknusXcft31nre",
-    "full_name": "内蒙古示例膏药健康管理服务有限公司",
-    "pkg": "示例膏药膏药贴",
-    "aliases": ["示例膏药"]
-  },
-  "示例客户": {
-    "dir_node": "FFTLw8eTuib1wak1GBOcrEYDnGd",
-    "sheet_node": "WnR0wJ97Fi6NOokB5DUcSv9Cned"
+  "示例客户B": {
+    "dir_node": "YOUR_FEISHU_WIKI_DIR_NODE_2",
+    "sheet_node": "YOUR_AUDIT_SHEET_NODE_2",
+    "full_name": "客户工商全称（可选）",
+    "pkg": "CMS 词包名（方向 B 用，可选）",
+    "aliases": ["别名1", "别名2"]
   }
 }
