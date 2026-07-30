@@ -76,8 +76,10 @@ def make_text_block(text):
 class FeishuBlockParser(HTMLParser):
     """将 CMS HTML 转换为飞书文档块列表。
 
-    处理：<h2>-<h4>、<p>、<ul>/<ol>、<strong>、<li>
+    处理：<h2>-<h4>、<p>、<ul>/<ol>、<strong>、<li>、<table>/<tr>/<td>/<th>
     注意：列表块用 block_type: 2 模拟（block_type: 14/16 会触发 field validation failed）
+    表格块(block_type:31) 用 _kind='table' 标记，由 create_wiki_node_and_write
+    转成飞书 descendant 结构写入（/children 端点不支持嵌套表格）。
     """
     def __init__(self):
         super().__init__()
@@ -86,13 +88,23 @@ class FeishuBlockParser(HTMLParser):
         self._tag = None
         self._list_items = []
         self._in_list = None  # 'ul' | 'ol' | None
+        # 表格解析状态
+        self._in_table = False
+        self._table_rows = []      # 当前表格所有行：[[(text, is_th), ...], ...]
+        self._cur_row = None       # 当前行：[(text, is_th), ...]
+        self._cur_cell = None      # 当前单元格字符累积
+        self._in_cell = False
+        self._cur_is_th = False
 
     def handle_starttag(self, tag, attrs):
         if tag in ('h2', 'h3', 'h4'):
             self._flush_text()
             self._tag = tag
         elif tag == 'strong':
-            self._current.append('**')
+            if self._in_cell:
+                self._cur_cell.append('**')
+            else:
+                self._current.append('**')
         elif tag == 'ul':
             self._flush_text()
             self._in_list = 'ul'
@@ -101,6 +113,16 @@ class FeishuBlockParser(HTMLParser):
             self._in_list = 'ol'
         elif tag == 'li':
             self._current = []
+        elif tag == 'table':
+            self._flush_text()
+            self._in_table = True
+            self._table_rows = []
+        elif tag == 'tr':
+            self._cur_row = []
+        elif tag in ('td', 'th'):
+            self._cur_cell = []
+            self._in_cell = True
+            self._cur_is_th = (tag == 'th')
 
     def handle_endtag(self, tag):
         if tag in ('h2', 'h3', 'h4'):
@@ -110,7 +132,10 @@ class FeishuBlockParser(HTMLParser):
             self._current = []
             self._tag = None
         elif tag == 'strong':
-            self._current.append('**')
+            if self._in_cell:
+                self._cur_cell.append('**')
+            else:
+                self._current.append('**')
         elif tag == 'p':
             self._flush_text()
             self._tag = None
@@ -124,9 +149,29 @@ class FeishuBlockParser(HTMLParser):
         elif tag == 'ol':
             self._flush_list_numbered()
             self._in_list = None
+        elif tag in ('td', 'th'):
+            if self._in_cell and self._cur_row is not None:
+                text = ''.join(self._cur_cell).strip()
+                self._cur_row.append((text, self._cur_is_th))
+            self._in_cell = False
+        elif tag == 'tr':
+            if self._in_table and self._cur_row is not None:
+                self._table_rows.append(self._cur_row)
+                self._cur_row = None
+        elif tag == 'table':
+            if self._in_table:
+                block = _table_rows_to_block(self._table_rows)
+                if block:
+                    self.blocks.append(block)
+                self._in_table = False
+                self._table_rows = []
+                self._cur_row = None
 
     def handle_data(self, data):
-        self._current.append(data)
+        if self._in_cell:
+            self._cur_cell.append(data)
+        else:
+            self._current.append(data)
 
     def _flush_text(self):
         text = ''.join(self._current).strip()
@@ -143,6 +188,29 @@ class FeishuBlockParser(HTMLParser):
         for i, item in enumerate(self._list_items, 1):
             self.blocks.append(make_text_block(f"{i}. {item}"))
         self._list_items = []
+
+
+def _table_rows_to_block(rows):
+    """将 [(text, is_th), ...] 的二维列表转为 _kind='table' 块标记。"""
+    if not rows:
+        return None
+    col_size = max((len(r) for r in rows), default=0)
+    if col_size == 0:
+        return None
+    norm_rows = []
+    for r in rows:
+        cells = [t for (t, th) in r]
+        while len(cells) < col_size:
+            cells.append("")
+        norm_rows.append(cells)
+    header_row = any(th for (t, th) in rows[0])
+    return {
+        "_kind": "table",
+        "row_size": len(norm_rows),
+        "column_size": col_size,
+        "header_row": header_row,
+        "rows": norm_rows,
+    }
 
 
 def convert_html_to_blocks(html_content):
@@ -186,19 +254,23 @@ def preview_blocks(articles, output_file=None):
         lines.append(f"\n── [{i+1}/{len(articles)}] {title} ({len(blocks)} blocks)")
 
         for j, b in enumerate(blocks):
-            bt = b.get("block_type", "?")
-            bt_name = BLOCK_TYPE_NAMES.get(bt, f"type_{bt}")
-            type_counts[bt_name] = type_counts.get(bt_name, 0) + 1
-
-            # Extract preview text
-            if bt in (4, 5, 6):
-                level = {4: 2, 5: 3, 6: 4}[bt]
-                text = b.get(f"heading{level}", {}).get("elements", [{}])[0].get("text_run", {}).get("content", "")
-            elif bt == 2:
-                elements = b.get("text", {}).get("elements", [])
-                text = "".join(e.get("text_run", {}).get("content", "") for e in elements)
+            if b.get("_kind") == "table":
+                bt_name = f"table{b.get('row_size')}x{b.get('column_size')}"
+                text = f"[header_row={b.get('header_row')}]"
             else:
-                text = "(block)"
+                bt = b.get("block_type", "?")
+                bt_name = BLOCK_TYPE_NAMES.get(bt, f"type_{bt}")
+                # Extract preview text
+                if bt in (4, 5, 6):
+                    level = {4: 2, 5: 3, 6: 4}[bt]
+                    text = b.get(f"heading{level}", {}).get("elements", [{}])[0].get("text_run", {}).get("content", "")
+                elif bt == 2:
+                    elements = b.get("text", {}).get("elements", [])
+                    text = "".join(e.get("text_run", {}).get("content", "") for e in elements)
+                else:
+                    text = "(block)"
+
+            type_counts[bt_name] = type_counts.get(bt_name, 0) + 1
 
             # Truncate long text
             if len(text) > 80:
@@ -281,7 +353,12 @@ def create_wiki_node_and_write(token, space_id, parent_node, title, blocks):
     obj_token = r["data"]["node"]["obj_token"]
     node_token = r["data"]["node"]["node_token"]
 
-    # 2. 写入块（带重试）
+    # 2. 含表格 → descendant 端点一次性建整棵子树
+    if any(b.get("_kind") == "table" for b in blocks):
+        err = _write_descendant(token, obj_token, blocks)
+        return node_token, obj_token, err
+
+    # 3. 无表格 → 原 children 平铺端点（已验证稳定）
     for attempt in range(3):
         resp = requests.post(
             f"https://open.feishu.cn/open-apis/docx/v1/documents/{obj_token}/blocks/{obj_token}/children",
@@ -295,6 +372,73 @@ def create_wiki_node_and_write(token, space_id, parent_node, title, blocks):
             time.sleep(1.0 * (attempt + 1))
 
     return node_token, obj_token, f"Write blocks (3 retries): {r2.get('code')} {r2.get('msg')}"
+
+
+def _write_descendant(token, obj_token, blocks):
+    """含表格时，用 /descendant 端点一次性建整棵子树（表格+单元格+内容）。
+
+    飞书 /children 端点不支持嵌套结构（表格块内套单元格），必须走
+    /descendant：children_id 列顶层块临时 id，descendants 平铺所有块
+    （段落/标题 + 表格块 + 单元格(32) + 单元格文本(2)），由飞书组装树。
+    返回 None 表示成功，否则返回错误串。
+    """
+    children_id = []
+    descendants = []
+    for b in blocks:
+        if b.get("_kind") == "table":
+            tid = f"tbl_{len(children_id)}"
+            flat_cell_ids = []
+            for r in range(b["row_size"]):
+                for c in range(b["column_size"]):
+                    cell_text = ""
+                    if r < len(b["rows"]) and c < len(b["rows"][r]):
+                        cell_text = b["rows"][r][c] or ""
+                    cid = f"{tid}_c_{r}_{c}"
+                    ctid = f"{tid}_t_{r}_{c}"
+                    content = make_text_block(cell_text)
+                    content["block_id"] = ctid
+                    content["children"] = []
+                    descendants.append(content)
+                    descendants.append({
+                        "block_id": cid, "block_type": 32,
+                        "table_cell": {}, "children": [ctid],
+                    })
+                    flat_cell_ids.append(cid)
+            descendants.append({
+                "block_id": tid,
+                "block_type": 31,
+                "children": flat_cell_ids,
+                "table": {
+                    "property": {
+                        "row_size": b["row_size"],
+                        "column_size": b["column_size"],
+                        "column_width": [120] * b["column_size"],
+                        "header_row": b.get("header_row", False),
+                    }
+                },
+            })
+            children_id.append(tid)
+        else:
+            pid = f"blk_{len(children_id)}"
+            nb = dict(b)
+            nb["block_id"] = pid
+            nb["children"] = []
+            descendants.append(nb)
+            children_id.append(pid)
+
+    for attempt in range(3):
+        resp = requests.post(
+            f"https://open.feishu.cn/open-apis/docx/v1/documents/{obj_token}/blocks/{obj_token}/descendant",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"children_id": children_id, "descendants": descendants, "index": 0}, timeout=30
+        )
+        r2 = resp.json()
+        if r2.get("code") == 0:
+            return None
+        if attempt < 2:
+            time.sleep(1.0 * (attempt + 1))
+
+    return f"Write descendant (3 retries): {r2.get('code')} {r2.get('msg')}"
 
 
 def fill_spreadsheet(token, spreadsheet_token, sheet_id, urls, start_row, col_letter="B"):
@@ -481,21 +625,92 @@ def retry_failed(state_file=None, token=None, space_id=None):
 # 🔙 方向 B：Wiki 块 → HTML（用于 CMS 导入）
 # ═══════════════════════════════════════════════════════════════════
 
+def _block_text(block):
+    """提取 bt=2 文本块内容，粗体包 **（用于表格单元格还原）。"""
+    if not block:
+        return ""
+    elements = block.get("text", {}).get("elements", [])
+    parts = []
+    for e in elements:
+        tr = e.get("text_run", {})
+        content = tr.get("content", "")
+        if tr.get("text_element_style", {}).get("bold"):
+            parts.append(f"**{content}**")
+        else:
+            parts.append(content)
+    return "".join(parts)
+
+
+def _build_table_html(block, idmap):
+    """将飞书表格块(31)转为 HTML <table>。
+
+    cells 为行主序 cell id 列表；配合 root with_descendants 读取，单元格(32)
+    与单元格文本(2) 都在 blocks 平铺列表里，用 idmap 反查单元格文本。
+    """
+    table = block.get("table", {}) or {}
+    prop = table.get("property", {})
+    row_size = prop.get("row_size", 0)
+    col_size = prop.get("column_size", 0)
+    cells = table.get("cells", [])
+    if not cells or row_size == 0 or col_size == 0:
+        return ""
+    header_row = prop.get("header_row", False)
+    rows_html = []
+    idx = 0
+    for r in range(row_size):
+        cells_html = []
+        for c in range(col_size):
+            cid = cells[idx] if idx < len(cells) else None
+            idx += 1
+            cell_text = ""
+            if cid and cid in idmap:
+                cell = idmap.get(cid)
+                if cell and cell.get("children"):
+                    cell_text = _block_text(idmap.get(cell["children"][0]))
+            tag = "th" if (header_row and r == 0) else "td"
+            cells_html.append(f"<{tag}>{cell_text}</{tag}>")
+        rows_html.append("<tr>" + "".join(cells_html) + "</tr>")
+    return "<table>\n" + "\n".join(rows_html) + "\n</table>"
+
+
 def feishu_blocks_to_html(blocks):
     """将飞书文档块列表转为 CMS HTML 字符串。
 
     ⚠️ 重要教训：
     - block_type=1（页面块）跳过：CMS 标题字段单独存，不应出现在正文
-    - block_type=4 用 heading2 字段，不是 text 字段
-    - block_type=5 用 heading3 字段，不是 text 字段
+    - block_type=4/5/6 用 heading2/3/4 字段，不是 text 字段
     - 粗体文本在 text_run.text_element_style.bold 中标记
+    - block_type=31 表格：经 root with_descendants 读取时，cell(32) 与
+      单元格文本(2) 都平铺在 blocks 里；用 table.cells 顺序 + idmap
+      反查单元格文本，重建 HTML <table>
     """
+    idmap = {b.get("block_id"): b for b in blocks if b.get("block_id")}
+    cell_text_ids = set()
+    for b in blocks:
+        if b.get("block_type") == 31:
+            for cid in (b.get("table", {}) or {}).get("cells", []):
+                cell = idmap.get(cid)
+                if cell and cell.get("children"):
+                    cell_text_ids.add(cell["children"][0])
+
     html_parts = []
     for block in blocks:
         bt = block.get("block_type")
 
         # ⚠️ 跳过 block_type=1（页面块 = 标题，CMS 已有 title 字段）
         if bt == 1:
+            continue
+        # 表格块：重建 HTML <table>
+        if bt == 31:
+            t = _build_table_html(block, idmap)
+            if t:
+                html_parts.append(t)
+            continue
+        # 单元格块(32)：由所属表格统一处理
+        if bt == 32:
+            continue
+        # 单元格内容文本(2)：由所属表格统一处理
+        if bt == 2 and block.get("block_id") in cell_text_ids:
             continue
 
         # 提取文本内容
@@ -571,10 +786,12 @@ def get_wiki_articles(token, space_id, parent_node_token, page_size=50):
     return result
 
 
-def get_doc_blocks(token, doc_token, page_size=100):
+def get_doc_blocks(token, doc_token, page_size=100, with_descendants=True):
     """获取飞书文档的所有块。
 
     返回 [{block_type, heading2?, heading3?, text?, ...}, ...]
+    with_descendants=True（默认）：平铺返回所有块，包括表格单元格(32)与
+      单元格文本(2)，配合 feishu_blocks_to_html 重建 <table> 必需。
     """
     blocks = []
     page_token = None
@@ -582,6 +799,8 @@ def get_doc_blocks(token, doc_token, page_size=100):
         params = {"page_size": page_size}
         if page_token:
             params["page_token"] = page_token
+        if with_descendants:
+            params["with_descendants"] = "true"
         resp = requests.get(
             f"https://open.feishu.cn/open-apis/docx/v1/documents/{doc_token}/blocks",
             headers={"Authorization": f"Bearer {token}"},

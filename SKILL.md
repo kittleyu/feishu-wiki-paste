@@ -45,6 +45,11 @@ python run_client.py 示例客户 10 --dry-run       # 只预览转换，不写�
 
 **其它方向的完整指令格式仍可用**（见下方「群内指令格式」）：方向 B（飞书→CMS 词包）、方向 F（目录链接→填表）、方向 G（AI 生文→粘贴→填表）。`client_map` 仅简化方向 A。
 
+> 🆕 **正文表格双向支持（v2.7.6）**：文章里的 `<table>` 现在两端都不丢——
+> - **方向 A（CMS→飞书）**：HTML `<table>` 解析成飞书表格块（block_type=31），经 `/descendant` 端点一次性建整棵子树（表格+单元格+内容），表头行 `<th>` 自动设为 `header_row`。
+> - **方向 B（飞书→CMS）**：读块时带 `with_descendants=true`，表格块(31)连同单元格(32)与单元格文本一并平铺返回，重建为 HTML `<table>`（首行 `<th>` 当且仅当 `header_row=true`）。
+> - 往返已实测无损（3×4 含表头表格原样还原）。
+
 ---
 
 ## 📋 前置条件
@@ -970,6 +975,7 @@ python direction_a_cms_to_feishu.py \
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v2.7.6 | 2026-07-30 | 🆕 **正文表格双向支持**：`paste_utils.py` 的 `FeishuBlockParser` 新增 `<table>/<tr>/<td>/<th>` 解析（标记 `_kind:table`）；`convert_html_to_blocks` 输出表格块；`create_wiki_node_and_write` 含表格时改走 `/descendant` 端点一次性建整棵子树（表格块31+单元格32+文本2，表头行设 `header_row`）；`get_doc_blocks` 默认 `with_descendants=true`，`feishu_blocks_to_html` 据 `table.cells` + idmap 重建 HTML `<table>`。方向 A/B 表格往返已实测无损（4行×3列表格原样还原） |
 | v2.7.5 | 2026-07-22 | 🐞 **修 run_client.py 路径飞书凭证未注入**：`run_pipeline_a` 内部漏调 `load_env()`（仅 CLI `main()` 调了），经 `run_client.py` 端到端跑方向 A 时 `KeyError: FEISHU_APP_ID`；已在 `run_pipeline_a` 开头补 `load_env()`。🆕 新增客户「示例肛肠医院」到 client_map.json（dir=GIdfwVWk / sheet=GBGpw6dQ），实战 30/30 写入飞书子目录 `7.22` 并回填审核表 |
 | v2.7.4 | 2026-07-21 | 🐞 **修方向 B 登录静默失败**：`auto_paste.do_login()` 自动点击「GEO账号登录」选项卡，把表单切到 GEO 模式导致运营账号凭据静默失败；移除该点击，默认运营账号模式登录成功。🆕 新增 `run_direction_b.py` 通用驱动，实战把示例客户飞书目录 29 篇粘贴回「示例词包」词包（corp_id=YOUR_CORP_ID_1, pkg_id=YOUR_PKG_ID_6，29/29） |
 | v2.7.3 | 2026-07-21 | 🧹 **整理脚本**：删除 4 个一次性 `run_*.py`，统一用 `run_client.py`（方向A）/ `run_direction_b.py`（方向B）通用驱动；同步 SKILL.md |
