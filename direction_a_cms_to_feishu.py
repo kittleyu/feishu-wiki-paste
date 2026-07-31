@@ -242,11 +242,13 @@ def main():
     ap.add_argument("--space-id", default=None)
     ap.add_argument("--dry-run", action="store_true", help="仅预览转换，不写入")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--subdir", default=None, help="在该目录下新建/复用名为 subdir 的子目录并贴入（如 7.31）")
     args = ap.parse_args()
     load_env()
     res = run_pipeline_a(args.company, args.node, args.limit,
                          log_fn=print, space_id=args.space_id,
-                         dry_run=args.dry_run, out_file=args.out)
+                         dry_run=args.dry_run, out_file=args.out,
+                         subdir=args.subdir)
     if res:
         print("汇总:", json.dumps({k: v for k, v in res.items()
                                    if k != "urls"}, ensure_ascii=False))

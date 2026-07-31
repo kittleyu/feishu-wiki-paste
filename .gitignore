@@ -28,3 +28,13 @@ bot_console.log
 .bot.heartbeat.tmp
 chrome_debug_profile/
 chrome_debug_profile_full/
+
+# 专项一次性脚本（含真实 corp_id，不推；通用能力见 cms_delete_pending.py）
+yueni_delete.py
+yueni_pending.py
+collect_yueni.py
+
+# 任务产物 / 一次性采集结果（含真实客户 corp_id，不推）
+*_articles_html.json
+*_write_results.json
+yueni_*.json
