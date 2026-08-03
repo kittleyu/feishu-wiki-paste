@@ -78,6 +78,8 @@ def main():
     ap.add_argument("--subdir", default=None, help="子目录名，默认当日日期 M.D（如 7.22）")
     ap.add_argument("--audit-status", type=int, default=None,
                     help="按审核状态筛选：1=已审核通过；-1=审核驳回；不填=全部（CMS 无独立待审核态）")
+    ap.add_argument("--corp-id", type=int, default=None,
+                    help="强制指定 CMS corp_id（避免同名公司反查选到空壳；也可用 client_map 的 corp_id 字段）")
     ap.add_argument("--dry-run", action="store_true", help="只预览转换，不写飞书/不填表")
     args = ap.parse_args()
 
@@ -100,12 +102,14 @@ def main():
 
     # 1) 粘贴到飞书（建/复用子目录）
     from direction_a_cms_to_feishu import run_pipeline_a
+    forced_corp = args.corp_id if args.corp_id is not None else entry.get("corp_id")
     res = run_pipeline_a(
         key, dir_node, args.limit,
         subdir=subdir,
         out_file=os.path.join(HERE, "bot_direction_a_results.json"),
         dry_run=args.dry_run,
         audit_status=args.audit_status,
+        corp_id=forced_corp,
     )
     if not res or res.get("total", 0) == 0:
         print("❌ 未取到文章（可能该公司无最新文章或登录失败）")

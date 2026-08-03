@@ -133,7 +133,7 @@ def find_corp_by_name(page, company, log_fn=print):
 
 def run_pipeline_a(company, node_token, limit=10, log_fn=print,
                    space_id=None, dry_run=False, out_file=None, subdir=None,
-                   audit_status=None):
+                   audit_status=None, corp_id=None):
     """方向 A 主流程：CMS 最新 limit 篇 → 飞书 Wiki 目录。
 
     company: 公司名（模糊匹配；同名多 corp 时自动选有文章且最多的）
@@ -165,10 +165,16 @@ def run_pipeline_a(company, node_token, limit=10, log_fn=print,
         else:
             log_fn("✅ huiyouhua 已是登录态")
 
-        # 1) 解析真实 corp_id
-        corp_id, corp_name = find_corp_by_name(page, company, log_fn)
-        if corp_id is None:
-            return None
+        # 1) 解析真实 corp_id（若调用方已强制指定 corp_id，则跳过同名反查，避免选到空壳）
+        if corp_id:
+            corps = list_corps(page)
+            corp_name = next((c.get("name") for c in corps if str(c.get("id")) == str(corp_id)), None)
+            corp_name = corp_name or company
+            log_fn(f">>> 已强制指定 corp_id={corp_id}（{corp_name}），跳过同名反查")
+        else:
+            corp_id, corp_name = find_corp_by_name(page, company, log_fn)
+            if corp_id is None:
+                return None
 
         # 2) 拉最新 limit 篇
         st_label = {1: "已审核通过", -1: "审核驳回"}.get(audit_status,
