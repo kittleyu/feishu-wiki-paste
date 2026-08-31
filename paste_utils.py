@@ -360,17 +360,31 @@ def create_wiki_node_and_write(token, space_id, parent_node, title, blocks):
         return node_token, obj_token, err
 
     # 3. 无表格 → 原 children 平铺端点（已验证稳定）
-    for attempt in range(3):
-        resp = requests.post(
-            f"https://open.feishu.cn/open-apis/docx/v1/documents/{obj_token}/blocks/{obj_token}/children",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json={"children": blocks, "index": 0}, timeout=30
-        )
-        r2 = resp.json()
-        if r2.get("code") == 0:
-            return node_token, obj_token, None
-        if attempt < 2:
-            time.sleep(1.0 * (attempt + 1))
+    #    ⚠️ 飞书 children 单次请求上限 50 块：超过会报 99992402 field validation failed
+    #    （2026-08-31 石家庄爱尔 6 篇 52~67 块无表格文章全失败定位到该限制）→ 分批写入
+    CHUNK = 50
+    r2 = {"code": -1}
+    ok_all = True
+    written = 0
+    for ci in range(0, len(blocks), CHUNK):
+        chunk = blocks[ci:ci + CHUNK]
+        for attempt in range(3):
+            resp = requests.post(
+                f"https://open.feishu.cn/open-apis/docx/v1/documents/{obj_token}/blocks/{obj_token}/children",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json={"children": chunk, "index": written}, timeout=30
+            )
+            r2 = resp.json()
+            if r2.get("code") == 0:
+                break
+            if attempt < 2:
+                time.sleep(1.0 * (attempt + 1))
+        if r2.get("code") != 0:
+            ok_all = False
+            break
+        written += len(chunk)
+    if ok_all:
+        return node_token, obj_token, None
 
     return node_token, obj_token, f"Write blocks (3 retries): {r2.get('code')} {r2.get('msg')}"
 

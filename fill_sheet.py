@@ -116,7 +116,8 @@ def run_fill_dated(node, urls, date_label, col=2, date_col=1, token=None,
     cl = col_letter(col)
     dl = col_letter(date_col)
     link_rng = f"{sid}!{cl}{start}:{cl}{end}"
-    date_rng = f"{sid}!{dl}{start}"
+    # 注意：sheets v2 PUT values 要求显式区间，单格必须写成 A12:A12（写 A12 报 90202 wrong range）
+    date_rng = f"{sid}!{dl}{start}:{dl}{start}"
     merge_rng = f"{sid}!{dl}{start}:{dl}{end}"
     res["range"] = link_rng
     res["merge"] = merge_rng
@@ -126,9 +127,12 @@ def run_fill_dated(node, urls, date_label, col=2, date_col=1, token=None,
         res["ok"] = True
         res["dry"] = True
         return res
-    # 1) 先写日期到 A 列起点
-    api("PUT", f"/open-apis/sheets/v2/spreadsheets/{sptoken}/values", token,
-        {"valueRange": {"range": date_rng, "values": [[date_label]]}})
+    # 1) 先写日期到 A 列起点（区间必须显式 A12:A12，见上方注释）
+    dd = api("PUT", f"/open-apis/sheets/v2/spreadsheets/{sptoken}/values", token,
+             {"valueRange": {"range": date_rng, "values": [[date_label]]}})
+    res["date_write_ok"] = (dd.get("code") == 0)
+    if dd.get("code") != 0:
+        print(f"⚠️ 日期标签写入失败: {dd.get('msg')} range={date_rng}")
     # 2) 合并 A 列块
     md = merge_range(token, sptoken, merge_rng, "MERGE_ALL")
     res["merged"] = (md.get("code") == 0)
