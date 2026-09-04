@@ -29,7 +29,7 @@ from prepare_multi import (load_env, feishu_collect, get_token, get_node_space,
                            list_nodes, feishu_wiki_domain, default_space_id)
 
 load_env()
-os.environ.setdefault("HYH_USER", "daixiaoyu")
+os.environ.setdefault("HYH_USER", "your_hyh_user")
 if not os.environ.get("HYH_PWD"):
     print("⚠️ 未检测到 HYH_PWD（huiyouhua 密码），机器人将无法自动登录；请在 .env 配置 HYH_USER/HYH_PWD")
 

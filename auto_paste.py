@@ -5,7 +5,7 @@ auto_paste.py — 全自动：启动调试 Chrome → 登录 huiyouhua → 反�
 仅用于本地自动化，密码通过环境变量 HYH_USER / HYH_PWD 传入，不落盘、不提交。
 
 用法：
-    HYH_USER=daixiaoyu HYH_PWD=xxxx \\
+    HYH_USER=your_hyh_user HYH_PWD=xxxx \\
     python auto_paste.py --company "示例血管医院" \\
         --pkg "示例静脉曲张医院" --in gui_articles.json
 
@@ -25,7 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROFILE = os.path.join(os.path.expandvars("%TEMP%"), "hyh_debug_profile")
 CHROME = os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe")
 
-USER = os.environ.get("HYH_USER", "daixiaoyu")
+USER = os.environ.get("HYH_USER", "your_hyh_user")
 PWD = os.environ.get("HYH_PWD", "")
 
 TARGET = "https://yunying.huiyouhua.com/cms-yunying.html?tab=articles"

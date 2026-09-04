@@ -28,7 +28,7 @@ PORT = 9222
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROFILE = os.path.join(os.path.expandvars("%TEMP%"), "hyh_debug_profile")
 CHROME = os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe")
-USER = os.environ.get("HYH_USER", "daixiaoyu")
+USER = os.environ.get("HYH_USER", "your_hyh_user")
 PWD = os.environ.get("HYH_PWD", "")
 TARGET = "https://yunying.huiyouhua.com/cms-yunying.html?tab=articles"
 

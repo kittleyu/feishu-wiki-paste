@@ -838,7 +838,7 @@ python launch_chrome_debug.py
 #    → 启动后保持窗口打开，确认 huiyouhua 已登录
 
 # 1) 飞书读取 + 转 HTML（skill 原生函数）
-python run_direction_b.py --node OfcbwcdeyicTKlkgS6fczBYhn4e \
+python run_direction_b.py --node YOUR_WIKI_NODE \
     --pkg-id YOUR_PKG_ID_1 --dry-convert          # 仅转换，产出 converted.json 预览
 
 # 2) 写 CMS 前，先自动核对 corp_id（读当前公司一篇样本反查，不写任何东西）
